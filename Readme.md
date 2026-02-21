@@ -3,17 +3,17 @@
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f2027,50:203a43,100:2c5364&height=180&section=header&text=EDBOTS&fontSize=50&fontColor=ffffff&animation=fadeIn&fontAlignY=35"/>
 
 # 🤖 EDBOTS  
-### Advanced WhatsApp Multi-Device Automation Framework
+### Production-Ready WhatsApp Multi-Device Automation Framework
 
 <br/>
 
-<img src="https://readme-typing-svg.herokuapp.com?font=Poppins&size=22&duration=4000&color=00F5FF&center=true&vCenter=true&width=600&lines=Fast+⚡;Modular+🧩;Secure+🔐;Open+Source+🚀;Built+With+Baileys+MD"/>
+<img src="https://readme-typing-svg.herokuapp.com?font=Poppins&size=22&duration=4000&color=00F5FF&center=true&vCenter=true&width=650&lines=Multi-Device+WhatsApp+Bot;Secure+Session+Pairing;Modular+Command+System;Optimized+For+Cloud+Deployment;Built+With+Baileys+MD"/>
 
-<br/><br/>
+<br/>
 
 <img src="https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white"/>
 <img src="https://img.shields.io/badge/Baileys-Multi%20Device-00bcd4?style=for-the-badge"/>
-<img src="https://img.shields.io/badge/Open%20Source-Yes-success?style=for-the-badge"/>
+<img src="https://img.shields.io/badge/Pairing-Live-success?style=for-the-badge"/>
 <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge"/>
 <img src="https://img.shields.io/github/stars/edunoluwadarasimidavid/EDBOTS?style=for-the-badge"/>
 <img src="https://img.shields.io/github/forks/edunoluwadarasimidavid/EDBOTS?style=for-the-badge"/>
@@ -22,41 +22,62 @@
 
 ---
 
-## 🌍 About EDBOTS
+# 🌍 Overview
 
-**EDBOTS** is a high-performance WhatsApp Multi-Device bot built using the powerful **Baileys** library.
+**EDBOTS** is a scalable WhatsApp Multi-Device automation framework built using the Baileys MD library.
 
-Designed for:
+It is designed for:
 
-- ⚡ Performance & Stability  
-- 🔐 Secure Session Handling  
-- 🧩 Modular Command Architecture  
-- 🌐 Flexible Deployment  
-- 🛠 Developer Customization  
+- ⚡ High performance and stability
+- 🔐 Secure session handling
+- 🧩 Modular command structure
+- 🌐 Cloud-ready deployment
+- 🛠 Developer customization
 
-This project is fully open-source and engineered for extensibility.
-
----
-
-## ✨ Core Features
-
-| Feature | Description |
-|----------|------------|
-| 🔐 Multi-Device | Works with latest WhatsApp MD |
-| 🧩 Modular System | Commands inside `/commands` |
-| 🔄 Auto Update | Update via ZIP system |
-| 👑 Owner Controls | Secure admin utilities |
-| 🛡 Group Tools | Anti-link, anti-spam, etc. |
-| ⚡ Optimized | Smart memory + media handling |
-| 🎨 Customizable | Branding via config.js |
+This project is open-source and production-structured.
 
 ---
 
-## 📁 Project Structure
+# ✨ Working Features
+
+| Feature | Status | Description |
+|----------|--------|------------|
+| 🔐 Multi-Device Login | ✅ Working | Compatible with latest WhatsApp MD |
+| 🌐 Web Pairing | ✅ Live | Pair via website (no terminal QR needed) |
+| 🧩 Modular Commands | ✅ Working | Add commands inside `/commands` |
+| 👑 Owner System | ✅ Working | Restricted admin commands |
+| 👥 Group Management | ✅ Working | Anti-link, moderation tools |
+| ⚡ Lightweight Core | ✅ Optimized | Efficient memory handling |
+| 🔄 Auto Reconnect | ✅ Enabled | Handles disconnect events |
+| 🎨 Config Customization | ✅ Editable | Customize via `config.js` |
+
+---
+
+# 🔗 Pairing Website (Live)
+
+Pair your WhatsApp using:
+
+👉 https://edbotsserver.onrender.com
+
+Steps:
+
+1. Open the link
+2. Enter your phone number
+3. Receive pairing code
+4. Enter code in WhatsApp → Linked Devices
+
+No QR terminal required.
+
+---
+
+# 📁 Project Structure
 
 ```
 EDBOTS/
 ├── commands/
+│   ├── ping.js
+│   ├── owner.js
+│   └── group.js
 ├── session/
 ├── utils/
 ├── config.js
@@ -64,43 +85,11 @@ EDBOTS/
 └── package.json
 ```
 
-Clean. Scalable. Developer-friendly.
+Clean. Maintainable. Scalable.
 
 ---
 
-## 🔑 Authentication
-
-### 🔹 Use Session String
-
-```js
-sessionID: 'YOUR_SESSION_STRING'
-```
-
-Or environment variable:
-
-```
-SESSION_ID=YOUR_SESSION_STRING
-```
-
----
-
-### 🔹 QR Login
-
-```js
-sessionID: ''
-```
-
-Run:
-
-```bash
-node index.js
-```
-
-Scan QR from WhatsApp → Linked Devices.
-
----
-
-## 🛠 Local Installation
+# 🛠 Local Installation
 
 ```bash
 git clone https://github.com/edunoluwadarasimidavid/EDBOTS.git
@@ -111,73 +100,110 @@ node index.js
 
 ---
 
-## 🚀 Deployment Options
+# 🔐 Authentication Methods
 
-- Render  
-- VPS  
-- Docker  
-- Any Node.js Hosting  
-- Cloud Panels  
+## 1️⃣ Session String
 
-**Recommended:** Node.js 18 or 20
+Add to `config.js`:
+
+```js
+sessionID: 'YOUR_SESSION_STRING'
+```
+
+Or use environment variable:
+
+```
+SESSION_ID=YOUR_SESSION_STRING
+```
 
 ---
 
-## 📢 Official WhatsApp Channel
+## 2️⃣ QR Login (Optional)
 
-<div align="center">
+Leave:
+
+```js
+sessionID: ''
+```
+
+Then run:
+
+```bash
+node index.js
+```
+
+Scan QR from WhatsApp → Linked Devices.
+
+---
+
+# 🚀 Deployment Options
+
+EDBOTS supports:
+
+- Render
+- VPS
+- Docker
+- Railway
+- Any Node.js hosting platform
+
+Recommended Node.js version: **18 or 20**
+
+---
+
+# ⚙ Configuration
+
+Edit `config.js`:
+
+```js
+module.exports = {
+  botName: "EDBOTS",
+  ownerNumber: "234XXXXXXXXXX",
+  prefix: ".",
+  sessionID: ""
+}
+```
+
+---
+
+# 📢 Official WhatsApp Channel
 
 <a href="https://whatsapp.com/channel/0029Vb7L1ofDDmFQRaKotG0f">
 <img src="https://img.shields.io/badge/Join-WhatsApp%20Channel-25D366?style=for-the-badge&logo=whatsapp&logoColor=white"/>
 </a>
 
-</div>
-
 ---
 
-## 📊 Repository Analytics
-
-<div align="center">
+# 📊 Repository Stats
 
 <img src="https://github-readme-stats.vercel.app/api?username=edunoluwadarasimidavid&show_icons=true&theme=tokyonight&hide_border=true" height="170"/>
 
-<img src="https://github-readme-stats.vercel.app/api/top-langs/?username=edunoluwadarasimidavid&layout=compact&theme=tokyonight&hide_border=true" height="170"/>
-
 <img src="https://github-readme-streak-stats.herokuapp.com/?user=edunoluwadarasimidavid&theme=tokyonight&hide_border=true"/>
 
-</div>
+---
+
+# 👨‍💻 Developer
+
+Edun Oluwadarasimi David  
+Website: https://edunoluwadarasimidavid.name.ng  
+Email: davidedun2010@gmail.com  
+Repository: https://github.com/edunoluwadarasimidavid/EDBOTS.git  
 
 ---
 
-## 👨‍💻 Developer
+# ⚠ Disclaimer
 
-<div align="center">
-
-### Edun Oluwadarasimi David
-
-🌐 Website: https://edunoluwadarasimidavid.name.ng  
-📧 Email: davidedun2010@gmail.com  
-🔗 Repository: https://github.com/edunoluwadarasimidavid/EDBOTS.git  
-
-</div>
-
----
-
-## ⚠ Disclaimer
-
-- Not affiliated with WhatsApp.
+- Not affiliated with WhatsApp Inc.
 - Use responsibly.
-- Avoid spam or policy violations.
-- For automation & educational use only.
+- Avoid spam or abuse.
+- Educational and automation purposes only.
 
 ---
 
-## 📜 License
+# 📜 License
 
 MIT License
 
 You may:
-
 - Modify
 - Rebrand
 - Distribute
@@ -191,6 +217,6 @@ In compliance with MIT terms.
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:2c5364,50:203a43,100:0f2027&height=120&section=footer"/>
 
-### 🤖 Powered by Baileys • Built with ❤️ by Edun Oluwadarasimi David
+### Powered by Baileys MD • Built with precision
 
 </div>
