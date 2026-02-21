@@ -4,42 +4,42 @@
 
 module.exports = {
     // Bot Owner Configuration
-    ownerNumber: ['2349028375495','2349028375495'], // Add your number without + or spaces (e.g., 919876543210)
-    ownerName: ['EDBOTS', 'Edun Oluwadarasimi David'], // Owner names corresponding to ownerNumber array
+    ownerNumber: ['2349028375495','2349028375495'],
+    ownerName: ['EDBOTS', 'Edun Oluwadarasimi David'],
     
     // Bot Configuration
     botName: 'EDBOTS',
     prefix: '.',
-    sessionName: 'session',
-    sessionID: process.env.SESSION_ID || '',
-    newsletterJid: '120363161513685998@newsletter', // Newsletter JID for menu forwarding
-    updateZipUrl: 'https://github.com/edunoluwadarasimidavid/EDBOTS/archive/refs/heads/main.zip', // URL to latest code zip for .update command
+    sessionName: 'session', // Folder name for session data
+    // sessionID removed - now managed in session/session_key.js
+    newsletterJid: '120363161513685998@newsletter',
+    updateZipUrl: 'https://github.com/edunoluwadarasimidavid/EDBOTS/archive/refs/heads/main.zip',
     
     // Sticker Configuration
     packname: 'EDBOTS',
     
     // Bot Behavior
-    selfMode: false, // Private mode - only owner can use commands
+    selfMode: false,
     autoRead: false,
     autoTyping: false,
     autoBio: false,
     autoSticker: false,
     autoReact: false,
-    autoReactMode: 'bot', // set bot or all via cmd
+    autoReactMode: 'bot',
     autoDownload: false,
     
     // Group Settings Defaults
     defaultGroupSettings: {
       antilink: false,
-      antilinkAction: 'delete', // 'delete', 'kick', 'warn'
+      antilinkAction: 'delete',
       antitag: false,
       antitagAction: 'delete',
-      antiall: false, // Owner only - blocks all messages from non-admins
+      antiall: false,
       antiviewonce: false,
       antibot: false,
-      anticall: false, // Anti-call feature
-      antigroupmention: false, // Anti-group mention feature
-      antigroupmentionAction: 'delete', // 'delete', 'kick'
+      anticall: false,
+      antigroupmention: false,
+      antigroupmentionAction: 'delete',
       welcome: true,
       welcomeMessage: '╭╼━≪•𝙽𝙴𝚆 𝙼𝙴𝙼𝙱𝙴𝚁•≫━╾╮\n┃𝚆𝙴𝙻𝙲𝙾𝙼𝙴: @user 👋\n┃Member count: #memberCount\n┃𝚃𝙸𝙼𝙴: time⏰\n╰━━━━━━━━━━━━━━━╯\n\n*@user* Welcome to *@group*! 🎉\n*Group 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝚃𝙸𝙾𝙽*\ngroupDesc\n\n> *ᴘᴏᴡᴇʀᴇᴅ ʙʏ botName*',
       goodbye: false,
@@ -49,12 +49,11 @@ module.exports = {
       nsfw: false,
       detect: false,
       chatbot: false,
-      autosticker: false // Auto-convert images/videos to stickers
+      autosticker: false
     },
     
-    // API Keys (add your own)
+    // API Keys
     apiKeys: {
-      // Add API keys here if needed
       openai: '',
       deepai: '',
       remove_bg: 'Rz66NjLymx2ZY7YoUAuroGTM'
@@ -73,17 +72,12 @@ module.exports = {
       invalidCommand: '❓ Invalid command! Type .menu for help'
     },
     
-    // Timezone
     timezone: 'Asia/Kolkata',
-    
-    // Limits
     maxWarnings: 3,
     
-    // Social Links (optional)
     social: {
       github: 'https://github.com/EDBOTS',
       instagram: 'https://instagram.com/edunoluwadarasimidavid',
       youtube: 'https://youtube.com/@edunoluwadarasimidavid?si=ZksmemM8EWFQsBbl'
     }
 };
-  

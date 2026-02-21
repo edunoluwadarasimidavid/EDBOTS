@@ -1,26 +1,40 @@
 /**
- * WhatsApp MD Bot - Main Entry Point
+ * ╔═══════════════════════════════════════════════════════════════╗
+ * ║                    EDBOT - WhatsApp MD Bot                    ║
+ * ║                                                               ║
+ * ║  Built by: Edun Oluwadarasimi David                           ║
+ * ║  GitHub: https://github.com/edunoluwadarasimidavid            ║
+ * ║  Instagram: @edunoluwadarasimidavid                           ║
+ * ║                                                               ║
+ * ║  A powerful WhatsApp bot built with Baileys library           ║
+ * ╚═══════════════════════════════════════════════════════════════╝
  */
-// CRITICAL: Prevent Puppeteer/Chromium downloads BEFORE any npm install or library loads
-// Set these environment variables FIRST to prevent any browser downloads
+
+// ============================================
+// CRITICAL: Environment Setup (MUST be first)
+// ============================================
+// Prevent Puppeteer/Chromium from auto-downloading
 process.env.PUPPETEER_SKIP_DOWNLOAD = 'true';
 process.env.PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = 'true';
 process.env.PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR || '/tmp/puppeteer_cache_disabled';
 
-// CRITICAL: Initialize temp system BEFORE any libraries that use temp directories
-// This must happen before Baileys, ffmpeg, or any other library loads
+// ============================================
+// Initialize Temp System (Before any libraries)
+// ============================================
 const { initializeTempSystem } = require('./utils/tempManager');
 const { startCleanup } = require('./utils/cleanup');
-// Initialize temp directory and set environment variables
 initializeTempSystem();
-// Start cleanup system (runs at startup and every 10 minutes)
 startCleanup();
 
-// Suppress console as fallback (early, before any requires)
+// ============================================
+// Console Output Filtering
+// Suppress noisy WhatsApp internal messages
+// ============================================
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 
+// Patterns to hide from console (internal WhatsApp protocol messages)
 const forbiddenPatternsConsole = [
   'closing session',
   'closing open session',
@@ -38,6 +52,7 @@ const forbiddenPatternsConsole = [
   'basekey'
 ];
 
+// Override console methods to filter out noise
 console.log = (...args) => {
   const message = args.map(a => typeof a === 'string' ? a : typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ').toLowerCase();
   if (!forbiddenPatternsConsole.some(pattern => message.includes(pattern))) {
@@ -59,7 +74,9 @@ console.warn = (...args) => {
   }
 };
 
-// Now safe to load libraries
+// ============================================
+// Import Required Libraries
+// ============================================
 const pino = require('pino');
 const {
   default: makeWASocket,
@@ -75,7 +92,125 @@ const path = require('path');
 const zlib = require('zlib');
 const os = require('os');
 
-// Remove Puppeteer cache (if some dependency downloaded Chromium into ~/.cache/puppeteer)
+// ============================================
+// Session Configuration
+// Session files are stored in session/ folder
+// ============================================
+const SESSION_FOLDER = './session';
+const SESSION_KEY_FILE = path.join(SESSION_FOLDER, 'session_key.js');
+const CREDS_FILE = path.join(SESSION_FOLDER, 'creds.json');
+
+/**
+ * Ensure the session folder exists
+ * Creates it recursively if missing
+ */
+function ensureSessionFolder() {
+  if (!fs.existsSync(SESSION_FOLDER)) {
+    fs.mkdirSync(SESSION_FOLDER, { recursive: true });
+    console.log(`📁 Created session folder: ${SESSION_FOLDER}`);
+  }
+}
+
+/**
+ * Load session ID from multiple sources
+ * Priority: 1. Environment variable, 2. session_key.js file
+ * @returns {string} Session ID or empty string
+ */
+function loadSessionID() {
+  // Priority 1: Environment variable
+  if (process.env.SESSION_ID) {
+    console.log('📡 Session: Loading from environment variable');
+    return process.env.SESSION_ID;
+  }
+
+  // Priority 2: session_key.js file
+  if (fs.existsSync(SESSION_KEY_FILE)) {
+    try {
+      // Clear require cache to get fresh data
+      delete require.cache[require.resolve(SESSION_KEY_FILE)];
+      const sessionKey = require(SESSION_KEY_FILE);
+      
+      if (sessionKey.sessionID) {
+        console.log('📡 Session: Loading from session_key.js');
+        return sessionKey.sessionID;
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to load session_key.js:', err.message);
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Process external session string and save to creds.json
+ * Format: 'HEADER!BASE64DATA' (ED BOTS format)
+ * @param {string} sessionString - The session string to process
+ * @returns {boolean} Success status
+ */
+function processSessionString(sessionString) {
+  if (!sessionString || !sessionString.includes('!')) {
+    return false;
+  }
+
+  try {
+    const [header, b64data] = sessionString.split('!');
+
+    if (!header || !b64data) {
+      throw new Error("Invalid session format. Expected 'HEADER!BASE64DATA'");
+    }
+
+    const cleanB64 = b64data.replace('...', '');
+    const compressedData = Buffer.from(cleanB64, 'base64');
+    const decompressedData = zlib.gunzipSync(compressedData);
+
+    ensureSessionFolder();
+    fs.writeFileSync(CREDS_FILE, decompressedData, 'utf8');
+    console.log(`📡 Session: 🔑 Retrieved from ${header} Session`);
+    return true;
+
+  } catch (e) {
+    console.error('📡 Session: ❌ Error processing session:', e.message);
+    return false;
+  }
+}
+
+/**
+ * Save session ID to session_key.js file
+ * This allows persistent session storage
+ * @param {string} sessionString - Session string to save
+ */
+function saveSessionID(sessionString) {
+  if (!sessionString) return;
+  
+  ensureSessionFolder();
+  
+  const fileContent = `/**
+ * Session Key Storage - EDBOT
+ * Built by: Edun Oluwadarasimi David
+ * Keep this file secure and never commit to version control
+ */
+
+module.exports = {
+    // Session ID from external source (ED BOTS format: 'HEADER!BASE64DATA')
+    sessionID: '${sessionString}',
+    
+    // Timestamp when session was saved
+    savedAt: '${new Date().toISOString()}'
+};
+`;
+  
+  try {
+    fs.writeFileSync(SESSION_KEY_FILE, fileContent, 'utf8');
+    console.log('💾 Session ID saved to session_key.js');
+  } catch (err) {
+    console.error('❌ Failed to save session ID:', err.message);
+  }
+}
+
+/**
+ * Remove Puppeteer cache to save disk space
+ */
 function cleanupPuppeteerCache() {
   try {
     const home = os.homedir();
@@ -90,11 +225,16 @@ function cleanupPuppeteerCache() {
     console.error('⚠️ Failed to cleanup Puppeteer cache:', err.message || err);
   }
 }
-// Optimized in-memory store with hard limits (Map-based for better memory management)
+
+// ============================================
+// In-Memory Message Store
+// Lightweight storage for recent messages
+// ============================================
 const store = {
-  messages: new Map(), // Use Map instead of plain object
-  maxPerChat: 20, // Limit to 20 messages per chat
+  messages: new Map(),
+  maxPerChat: 20, // Maximum messages to keep per chat
   
+  // Bind store to socket events
   bind: (ev) => {
     ev.on('messages.upsert', ({ messages }) => {
       for (const msg of messages) {
@@ -108,9 +248,8 @@ const store = {
         const chatMsgs = store.messages.get(jid);
         chatMsgs.set(msg.key.id, msg);
         
-        // Aggressive cleanup per chat - keep only recent messages
+        // Remove oldest messages if limit exceeded
         if (chatMsgs.size > store.maxPerChat) {
-          // Remove oldest message (first entry in Map)
           const oldestKey = chatMsgs.keys().next().value;
           chatMsgs.delete(oldestKey);
         }
@@ -118,20 +257,27 @@ const store = {
     });
   },
   
+  // Load a specific message by JID and ID
   loadMessage: async (jid, id) => {
     return store.messages.get(jid)?.get(id) || null;
   }
 };
 
-// Optimized message deduplication (Set-based, no timestamps needed)
+// ============================================
+// Message Deduplication
+// Prevents processing the same message twice
+// ============================================
 const processedMessages = new Set();
-
-// Aggressive cleanup - clear every 5 minutes
 setInterval(() => {
   processedMessages.clear();
-}, 5 * 60 * 1000); // Every 5 minutes
+}, 5 * 60 * 1000); // Clear every 5 minutes
 
-// Custom Pino logger with suppression for Baileys noise
+/**
+ * Create a suppressed Pino logger
+ * Filters out internal WhatsApp protocol noise
+ * @param {string} level - Log level
+ * @returns {Object} Configured logger
+ */
 const createSuppressedLogger = (level = 'silent') => {
   const forbiddenPatterns = [
     'closing session',
@@ -156,7 +302,6 @@ const createSuppressedLogger = (level = 'silent') => {
   try {
     logger = pino({
       level,
-      // Fallback transport without pino-pretty (in case not installed)
       transport: process.env.NODE_ENV === 'production' ? undefined : {
         target: 'pino-pretty',
         options: {
@@ -172,15 +317,12 @@ const createSuppressedLogger = (level = 'silent') => {
         error: 4,
         fatal: 5
       },
-      // Redact sensitive fields
       redact: ['registrationId', 'ephemeralKeyPair', 'rootKey', 'chainKey', 'baseKey']
     });
   } catch (err) {
-    // Fallback to basic pino without transport
     logger = pino({ level });
   }
 
-  // Wrap log methods to filter
   const originalInfo = logger.info.bind(logger);
   logger.info = (...args) => {
     const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ').toLowerCase();
@@ -188,105 +330,98 @@ const createSuppressedLogger = (level = 'silent') => {
       originalInfo(...args);
     }
   };
-  logger.debug = () => {}; // Fully disable debug
-  logger.trace = () => {}; // Fully disable trace
+  logger.debug = () => {};
+  logger.trace = () => {};
   return logger;
 };
 
-// Main connection function
+// ============================================
+// Main Bot Function
+// Initializes and manages the WhatsApp connection
+// ============================================
 async function startBot() {
-  const sessionFolder = `./${config.sessionName}`;
-  const sessionFile = path.join(sessionFolder, 'creds.json');
- 
- // Process external session string (ED BOTS compatible)
-if (config.sessionID && config.sessionID.includes('!')) {
-  try {
-    const [header, b64data] = config.sessionID.split('!');
-
-    if (!header || !b64data) {
-      throw new Error("❌ Invalid session format. Expected 'EDBOTS! CODES'");
+  ensureSessionFolder();
+  
+  // Load and process session ID
+  const sessionID = loadSessionID();
+  
+  if (sessionID) {
+    const success = processSessionString(sessionID);
+    if (success && process.env.SESSION_ID) {
+      // If loaded from env, save to file for persistence
+      saveSessionID(sessionID);
     }
-
-    const cleanB64 = b64data.replace('...', '');
-    const compressedData = Buffer.from(cleanB64, 'base64');
-    const decompressedData = zlib.gunzipSync(compressedData);
-
-    if (!fs.existsSync(sessionFolder)) {
-      fs.mkdirSync(sessionFolder, { recursive: true });
-    }
-
-    fs.writeFileSync(sessionFile, decompressedData, 'utf8');
-    console.log(`📡 Session : 🔑 Retrieved from ${header} Session`);
-
-  } catch (e) {
-    console.error('📡 Session : ❌ Error processing external session:', e.message);
+  } else {
+    console.log('📡 Session: No session ID found, waiting for QR code scan...');
   }
-}
  
-  const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
+  // Initialize auth state with session folder
+  const { state, saveCreds } = await useMultiFileAuthState(SESSION_FOLDER);
  
-  // Use suppressed logger for socket
   const suppressedLogger = createSuppressedLogger('silent');
  
+  // Create WhatsApp socket connection
   const sock = makeWASocket({
     logger: suppressedLogger,
-    printQRInTerminal: false,
+    printQRInTerminal: false, // We handle QR manually
     browser: Browsers.macOS('Desktop'),
     auth: state,
-    // Memory optimization: prevent loading old messages into RAM
     syncFullHistory: false,
     downloadHistory: false,
     markOnlineOnConnect: false,
-    getMessage: async () => undefined // Don't load messages from store
+    getMessage: async () => undefined
   });
  
-  // Bind store to socket
+  // Bind message store to socket
   store.bind(sock.ev);
  
-  // Watchdog for inactive socket (Baileys bug fix)
+  // ============================================
+  // Watchdog: Reconnect on inactivity
+  // ============================================
   let lastActivity = Date.now();
   const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
-  // Update on every message
   sock.ev.on('messages.upsert', () => {
     lastActivity = Date.now();
   });
 
-  // Check every 5 min
   const watchdogInterval = setInterval(async () => {
-    if (Date.now() - lastActivity > INACTIVITY_TIMEOUT && sock.ws.readyState === 1) { // WebSocket open but inactive
+    if (Date.now() - lastActivity > INACTIVITY_TIMEOUT && sock.ws.readyState === 1) {
       console.log('⚠️ No activity detected. Forcing reconnect...');
       await sock.end(undefined, undefined, { reason: 'inactive' });
       clearInterval(watchdogInterval);
-      setTimeout(() => startBot(), 5000); // Slightly longer delay
+      setTimeout(() => startBot(), 5000);
     }
-  }, 5 * 60 * 1000); // Every 5 min check
+  }, 5 * 60 * 1000); // Check every 5 minutes
 
-  // Clear on close/open
   sock.ev.on('connection.update', (update) => {
     const { connection } = update;
     if (connection === 'open') {
-      lastActivity = Date.now(); // Reset on open
+      lastActivity = Date.now();
     } else if (connection === 'close') {
       clearInterval(watchdogInterval);
     }
   });
  
-  // Connection update handler
+  // ============================================
+  // Connection Update Handler
+  // Handles QR codes, connection open/close events
+  // ============================================
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
    
+    // Display QR code for scanning
     if (qr) {
       console.log('\n\n📱 Scan this QR code with WhatsApp:\n');
       qrcode.generate(qr, { small: true });
     }
    
+    // Handle connection close
     if (connection === 'close') {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const errorMessage = lastDisconnect?.error?.message || 'Unknown error';
      
-      // Suppress verbose error output for common stream errors (515, etc.)
       if (statusCode === 515 || statusCode === 503 || statusCode === 408) {
         console.log(`⚠️ Connection closed (${statusCode}). Reconnecting...`);
       } else {
@@ -296,28 +431,30 @@ if (config.sessionID && config.sessionID.includes('!')) {
       if (shouldReconnect) {
         setTimeout(() => startBot(), 3000);
       }
-    } else if (connection === 'open') {
+    } 
+    // Handle connection open
+    else if (connection === 'open') {
       console.log('\n✅ Bot connected successfully!');
       console.log(`📱 Bot Number: ${sock.user.id.split(':')[0]}`);
       console.log(`🤖 Bot Name: ${config.botName}`);
       console.log(`⚡ Prefix: ${config.prefix}`);
-      const ownerNames = Array.isArray(config.ownerName) ? config.ownerName.join(',') : config.ownerName;
+      const ownerNames = Array.isArray(config.ownerName) ? config.ownerName.join(', ') : config.ownerName;
       console.log(`👑 Owner: ${ownerNames}\n`);
       console.log('Bot is ready to receive messages!\n');
-     
-      // Set bot status
+      
+      // Update bio if enabled
       if (config.autoBio) {
         await sock.updateProfileStatus(`${config.botName} | Active 24/7`);
       }
-     
+      
       // Initialize anti-call feature
       handler.initializeAntiCall(sock);
-     
-      // Cleanup old chats (keep only active ones, e.g., last touched <1 day)
+      
+      // Cleanup old chat messages
       const now = Date.now();
       for (const [jid, chatMsgs] of store.messages.entries()) {
         const timestamps = Array.from(chatMsgs.values()).map(m => m.messageTimestamp * 1000 || 0);
-        if (timestamps.length > 0 && now - Math.max(...timestamps) > 24 * 60 * 60 * 1000) { // 1 day old chat
+        if (timestamps.length > 0 && now - Math.max(...timestamps) > 24 * 60 * 60 * 1000) {
           store.messages.delete(jid);
         }
       }
@@ -325,10 +462,14 @@ if (config.sessionID && config.sessionID.includes('!')) {
     }
   });
  
-  // Credentials update handler
+  // Save credentials when updated
   sock.ev.on('creds.update', saveCreds);
  
-  // System JID filter - checks if JID is from broadcast/status/newsletter
+  /**
+   * Check if JID is a system/broadcast JID
+   * @param {string} jid - JID to check
+   * @returns {boolean} True if system JID
+   */
   const isSystemJid = (jid) => {
     if (!jid) return true;
     return jid.includes('@broadcast') ||
@@ -337,55 +478,38 @@ if (config.sessionID && config.sessionID.includes('!')) {
            jid.includes('@newsletter.');
   };
  
-  // Messages handler - Process only new messages
+  // ============================================
+  // Message Handler
+  // Processes incoming messages
+  // ============================================
   sock.ev.on('messages.upsert', ({ messages, type }) => {
-    // Only process "notify" type (new messages), skip "append" (old messages from history)
     if (type !== 'notify') return;
    
-    // Process messages in the array
     for (const msg of messages) {
-      // Skip if message is invalid or missing key
       if (!msg.message || !msg.key?.id) continue;
-     
-      // Skip messages from bot itself to prevent feedback loops
-      // Note: Owner commands work fine because owner messages have fromMe=false
-      // Only messages sent BY the bot itself have fromMe=true
-    // if (msg.key.fromMe) continue;
      
       const from = msg.key.remoteJid;
      
-      // HARD DM BLOCK - Ignore all private chats (must be first check)
-      // Bot operates ONLY in groups/communities
-      // Skip if from is null/undefined
-      if (!from) {
-        continue;
-      }
+      if (!from) continue;
      
-      // System message filter - ignore broadcast/status/newsletter messages
-      if (isSystemJid(from)) {
-        continue; // Silently ignore system messages
-      }
+      // Skip system messages
+      if (isSystemJid(from)) continue;
      
-      // Deduplication: Skip if message has already been processed
+      // Deduplication check
       const msgId = msg.key.id;
       if (processedMessages.has(msgId)) continue;
      
-      // Timestamp validation: Only process messages within last 5 minutes
-      const MESSAGE_AGE_LIMIT = 5 * 60 * 1000; // 5 minutes in milliseconds
+      // Skip old messages (older than 5 minutes)
+      const MESSAGE_AGE_LIMIT = 5 * 60 * 1000;
       let messageAge = 0;
       if (msg.messageTimestamp) {
         messageAge = Date.now() - (msg.messageTimestamp * 1000);
-        if (messageAge > MESSAGE_AGE_LIMIT) {
-          // Message is too old, skip processing
-          continue;
-        }
+        if (messageAge > MESSAGE_AGE_LIMIT) continue;
       }
      
-      // Mark message as processed
       processedMessages.add(msgId);
       
-      // Store message FIRST (before processing)
-      // from already defined above in DM block check
+      // Store message in memory
       if (msg.key && msg.key.id) {
         if (!store.messages.has(from)) {
           store.messages.set(from, new Map());
@@ -393,9 +517,8 @@ if (config.sessionID && config.sessionID.includes('!')) {
         const chatMsgs = store.messages.get(from);
         chatMsgs.set(msg.key.id, msg);
         
-        // Cleanup: Keep only last 20 per chat (reduced from 200)
+        // Keep only recent messages
         if (chatMsgs.size > store.maxPerChat) {
-          // Remove oldest messages
           const sortedIds = Array.from(chatMsgs.entries())
             .sort((a, b) => (a[1].messageTimestamp || 0) - (b[1].messageTimestamp || 0))
             .map(([id]) => id);
@@ -405,7 +528,7 @@ if (config.sessionID && config.sessionID.includes('!')) {
         }
       }
      
-      // Process command IMMEDIATELY (don't block on other operations)
+      // Handle the message
       handler.handleMessage(sock, msg).catch(err => {
         if (!err.message?.includes('rate-overlimit') &&
             !err.message?.includes('not-authorized')) {
@@ -413,104 +536,96 @@ if (config.sessionID && config.sessionID.includes('!')) {
         }
       });
      
-      // Do other operations in background (non-blocking)
+      // Auto-read messages in groups (if enabled)
       setImmediate(async () => {
-        // Auto-read messages (only for groups - DMs already blocked above)
-        // from already defined above in DM block check
         if (config.autoRead && from.endsWith('@g.us')) {
           try {
             await sock.readMessages([msg.key]);
-          } catch (e) {
-            // Silently handle
-          }
+          } catch (e) {}
         }
        
-        // Check for antilink (only for groups)
-        // from already defined above in DM block check, and we know it's a group
+        // Handle anti-link in groups
         if (from.endsWith('@g.us')) {
           try {
             const groupMetadata = await handler.getGroupMetadata(sock, msg.key.remoteJid);
             if (groupMetadata) {
               await handler.handleAntilink(sock, msg, groupMetadata);
             }
-          } catch (error) {
-            // Silently handle
-          }
+          } catch (error) {}
         }
       });
     }
   });
  
-  // Message receipt updates (silently handled, no logging)
-  sock.ev.on('message-receipt.update', () => {
-    // Silently handle receipt updates
-  });
+  // Placeholder handlers for other events
+  sock.ev.on('message-receipt.update', () => {});
+  sock.ev.on('messages.update', () => {});
  
-  // Message updates (silently handled, no logging)
-  sock.ev.on('messages.update', () => {
-    // Silently handle message updates
-  });
- 
-  // Group participant updates (join/leave)
+  // Handle group participant updates (welcome/goodbye)
   sock.ev.on('group-participants.update', async (update) => {
     await handler.handleGroupUpdate(sock, update);
   });
  
-  // Handle errors - suppress common stream errors
+  // Handle socket errors
   sock.ev.on('error', (error) => {
     const statusCode = error?.output?.statusCode;
-    // Suppress verbose output for common stream errors
-    if (statusCode === 515 || statusCode === 503 || statusCode === 408) {
-      // These are usually temporary connection issues, handled by reconnection
-      return;
-    }
+    if (statusCode === 515 || statusCode === 503 || statusCode === 408) return;
     console.error('Socket error:', error.message || error);
   });
  
   return sock;
 }
-// Start the bot
+
+// ============================================
+// Bot Startup
+// ============================================
 console.log('🚀 Starting WhatsApp MD Bot...\n');
 console.log(`📦 Bot Name: ${config.botName}`);
 console.log(`⚡ Prefix: ${config.prefix}`);
-const ownerNames = Array.isArray(config.ownerName) ? config.ownerName.join(',') : config.ownerName;
+const ownerNames = Array.isArray(config.ownerName) ? config.ownerName.join(', ') : config.ownerName;
 console.log(`👑 Owner: ${ownerNames}\n`);
 
-// Proactively delete Puppeteer cache so it doesn't fill disk on panels
+// Clean up Puppeteer cache before starting
 cleanupPuppeteerCache();
 
+// Start the bot
 startBot().catch(err => {
   console.error('Error starting bot:', err);
   process.exit(1);
 });
-// Handle process termination
+
+// ============================================
+// Error Handlers
+// ============================================
+
+// Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
-  // Handle ENOSPC errors gracefully without crashing
   if (err.code === 'ENOSPC' || err.errno === -28 || err.message?.includes('no space left on device')) {
     console.error('⚠️ ENOSPC Error: No space left on device. Attempting cleanup...');
     const { cleanupOldFiles } = require('./utils/cleanup');
     cleanupOldFiles();
     console.warn('⚠️ Cleanup completed. Bot will continue but may experience issues until space is freed.');
-    return; // Don't crash, just log and continue
+    return;
   }
   console.error('Uncaught Exception:', err);
 });
+
+// Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-  // Handle ENOSPC errors gracefully
   if (err.code === 'ENOSPC' || err.errno === -28 || err.message?.includes('no space left on device')) {
     console.warn('⚠️ ENOSPC Error in promise: No space left on device. Attempting cleanup...');
     const { cleanupOldFiles } = require('./utils/cleanup');
     cleanupOldFiles();
     console.warn('⚠️ Cleanup completed. Bot will continue but may experience issues until space is freed.');
-    return; // Don't crash, just log and continue
+    return;
   }
  
-  // Don't spam console with rate limit errors
   if (err.message && err.message.includes('rate-overlimit')) {
     console.warn('⚠️ Rate limit reached. Please slow down your requests.');
     return;
   }
   console.error('Unhandled Rejection:', err);
 });
-// Export store for use in commands
+
+// Export store for external use
 module.exports = { store };
