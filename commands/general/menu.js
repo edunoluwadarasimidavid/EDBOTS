@@ -28,7 +28,7 @@ module.exports = {
       });
       
       const ownerNames = Array.isArray(config.ownerName) ? config.ownerName : [config.ownerName];
-      const displayOwner = ownerNames[0] || config.ownerName || 'Bot Owner';
+      const displayOwner = ownerNames[0] || config.ownerName || 'Bot Owner (EDBOTS) ';
       
       let menuText = `╭━━『 *${config.botName}* 』━━╮\n\n`;
       menuText += `👋 Hello @${extra.sender.split('@')[0]}!\n\n`;
