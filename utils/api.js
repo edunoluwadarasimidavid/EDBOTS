@@ -3,6 +3,7 @@
  */
 
 const axios = require('axios');
+const util = require('util'); // Import util module for promisify
 
 const api = axios.create({
   timeout: 30000,
@@ -10,6 +11,23 @@ const api = axios.create({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
   }
 });
+
+// Generic retry helper function
+const tryRequest = async (getter, attempts = 3) => {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await getter();
+    } catch (err) {
+      lastError = err;
+      if (attempt < attempts) {
+        // Wait longer for subsequent retries
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+      }
+    }
+  }
+  throw lastError;
+};
 
 // API Endpoints
 const APIs = {
@@ -74,16 +92,67 @@ const APIs = {
     }
   },
   
-  // Translate
-  translate: async (text, to = 'en') => {
+  // Translate (Enhanced with multi-API retry logic)
+  translate: async (textToTranslate, lang = 'en') => {
+    let translatedText = null;
+
+    // Try API 1 (Google Translate API)
     try {
-      const response = await api.get(`https://api.siputzx.my.id/api/tools/translate`, {
-        params: { text, to }
+      const response = await api.get(`https://translate.googleapis.com/translate_a/single`, {
+        params: {
+          client: 'gtx',
+          sl: 'auto',
+          tl: lang,
+          dt: 't',
+          q: textToTranslate
+        }
       });
-      return response.data;
-    } catch (error) {
-      throw new Error('Translation failed');
+      if (response.data && response.data[0] && response.data[0][0] && response.data[0][0][0]) {
+        translatedText = response.data[0][0][0];
+      }
+    } catch (e) {
+      console.error('Google Translate API failed:', e.message);
     }
+
+    // If API 1 fails, try API 2 (MyMemory)
+    if (!translatedText) {
+      try {
+        const response = await api.get(`https://api.mymemory.translated.net/get`, {
+          params: {
+            q: textToTranslate,
+            langpair: `auto|${lang}`
+          }
+        });
+        if (response.data && response.data.responseData && response.data.responseData.translatedText) {
+          translatedText = response.data.responseData.translatedText;
+        }
+      } catch (e) {
+        console.error('MyMemory API failed:', e.message);
+      }
+    }
+
+    // If API 2 fails, try API 3 (Dreaded.site)
+    if (!translatedText) {
+      try {
+        const response = await api.get(`https://api.dreaded.site/api/translate`, {
+          params: {
+            text: textToTranslate,
+            lang: lang
+          }
+        });
+        if (response.data && response.data.translated) {
+          translatedText = response.data.translated;
+        }
+      } catch (e) {
+        console.error('Dreaded.site API failed:', e.message);
+      }
+    }
+    
+    if (!translatedText) {
+        throw new Error('All translation APIs failed.');
+    }
+
+    return { translation: translatedText };
   },
   
   // Random Meme
@@ -152,91 +221,22 @@ const APIs = {
   
   // Song Download APIs
   getIzumiDownloadByUrl: async (youtubeUrl) => {
-    const AXIOS_DEFAULTS = {
-      timeout: 60000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
-      }
-    };
-    
-    const tryRequest = async (getter, attempts = 3) => {
-      let lastError;
-      for (let attempt = 1; attempt <= attempts; attempt++) {
-        try {
-          return await getter();
-        } catch (err) {
-          lastError = err;
-          if (attempt < attempts) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-      }
-      throw lastError;
-    };
-    
     const apiUrl = `https://izumiiiiiiii.dpdns.org/downloader/youtube?url=${encodeURIComponent(youtubeUrl)}&format=mp3`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    const res = await tryRequest(() => api.get(apiUrl)); // Use global api instance
     if (res?.data?.result?.download) return res.data.result;
     throw new Error('Izumi youtube?url returned no download');
   },
   
   getIzumiDownloadByQuery: async (query) => {
-    const AXIOS_DEFAULTS = {
-      timeout: 60000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
-      }
-    };
-    
-    const tryRequest = async (getter, attempts = 3) => {
-      let lastError;
-      for (let attempt = 1; attempt <= attempts; attempt++) {
-        try {
-          return await getter();
-        } catch (err) {
-          lastError = err;
-          if (attempt < attempts) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-      }
-      throw lastError;
-    };
-    
     const apiUrl = `https://izumiiiiiiii.dpdns.org/downloader/youtube-play?query=${encodeURIComponent(query)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    const res = await tryRequest(() => api.get(apiUrl)); // Use global api instance
     if (res?.data?.result?.download) return res.data.result;
     throw new Error('Izumi youtube-play returned no download');
   },
   
   getYupraDownloadByUrl: async (youtubeUrl) => {
-    const AXIOS_DEFAULTS = {
-      timeout: 60000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
-      }
-    };
-    
-    const tryRequest = async (getter, attempts = 3) => {
-      let lastError;
-      for (let attempt = 1; attempt <= attempts; attempt++) {
-        try {
-          return await getter();
-        } catch (err) {
-          lastError = err;
-          if (attempt < attempts) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-      }
-      throw lastError;
-    };
-    
     const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    const res = await tryRequest(() => api.get(apiUrl)); // Use global api instance
     if (res?.data?.success && res?.data?.data?.download_url) {
       return {
         download: res.data.data.download_url,
@@ -248,31 +248,8 @@ const APIs = {
   },
   
   getOkatsuDownloadByUrl: async (youtubeUrl) => {
-    const AXIOS_DEFAULTS = {
-      timeout: 60000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
-      }
-    };
-    
-    const tryRequest = async (getter, attempts = 3) => {
-      let lastError;
-      for (let attempt = 1; attempt <= attempts; attempt++) {
-        try {
-          return await getter();
-        } catch (err) {
-          lastError = err;
-          if (attempt < attempts) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-      }
-      throw lastError;
-    };
-    
     const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    const res = await tryRequest(() => api.get(apiUrl)); // Use global api instance
     if (res?.data?.dl) {
       return {
         download: res.data.dl,
@@ -284,31 +261,8 @@ const APIs = {
   },
   
   getEliteProTechDownloadByUrl: async (youtubeUrl) => {
-    const AXIOS_DEFAULTS = {
-      timeout: 60000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
-      }
-    };
-    
-    const tryRequest = async (getter, attempts = 3) => {
-      let lastError;
-      for (let attempt = 1; attempt <= attempts; attempt++) {
-        try {
-          return await getter();
-        } catch (err) {
-          lastError = err;
-          if (attempt < attempts) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-      }
-      throw lastError;
-    };
-    
     const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp3`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    const res = await tryRequest(() => api.get(apiUrl)); // Use global api instance
     if (res?.data?.success && res?.data?.downloadURL) {
       return {
         download: res.data.downloadURL,
@@ -319,31 +273,8 @@ const APIs = {
   },
   
     getEliteProTechVideoByUrl: async (youtubeUrl) => {
-    const AXIOS_DEFAULTS = {
-      timeout: 60000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
-      }
-    };
-    
-    const tryRequest = async (getter, attempts = 3) => {
-      let lastError;
-      for (let attempt = 1; attempt <= attempts; attempt++) {
-        try {
-          return await getter();
-        } catch (err) {
-          lastError = err;
-          if (attempt < attempts) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-      }
-      throw lastError;
-    };
-    
     const apiUrl = `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(youtubeUrl)}&format=mp4`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    const res = await tryRequest(() => api.get(apiUrl)); // Use global api instance
     if (res?.data?.success && res?.data?.downloadURL) {
       return {
         download: res.data.downloadURL,
@@ -355,31 +286,8 @@ const APIs = {
   
   // Video Download APIs
   getYupraVideoByUrl: async (youtubeUrl) => {
-    const AXIOS_DEFAULTS = {
-      timeout: 60000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
-      }
-    };
-    
-    const tryRequest = async (getter, attempts = 3) => {
-      let lastError;
-      for (let attempt = 1; attempt <= attempts; attempt++) {
-        try {
-          return await getter();
-        } catch (err) {
-          lastError = err;
-          if (attempt < attempts) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-      }
-      throw lastError;
-    };
-    
     const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    const res = await tryRequest(() => api.get(apiUrl)); // Use global api instance
     if (res?.data?.success && res?.data?.data?.download_url) {
       return {
         download: res.data.data.download_url,
@@ -391,31 +299,8 @@ const APIs = {
   },
   
   getOkatsuVideoByUrl: async (youtubeUrl) => {
-    const AXIOS_DEFAULTS = {
-      timeout: 60000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
-      }
-    };
-    
-    const tryRequest = async (getter, attempts = 3) => {
-      let lastError;
-      for (let attempt = 1; attempt <= attempts; attempt++) {
-        try {
-          return await getter();
-        } catch (err) {
-          lastError = err;
-          if (attempt < attempts) {
-            await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-      }
-      throw lastError;
-    };
-    
     const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
-    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    const res = await tryRequest(() => api.get(apiUrl)); // Use global api instance
     if (res?.data?.result?.mp4) {
       return { download: res.data.result.mp4, title: res.data.result.title };
     }
@@ -426,7 +311,7 @@ const APIs = {
   getTikTokDownload: async (url) => {
     const apiUrl = `https://api.siputzx.my.id/api/d/tiktok?url=${encodeURIComponent(url)}`;
     try {
-      const response = await axios.get(apiUrl, { 
+      const response = await api.get(apiUrl, { // Use global api instance
         timeout: 15000,
         headers: {
           'accept': '*/*',
@@ -464,7 +349,7 @@ const APIs = {
   screenshotWebsite: async (url) => {
     try {
       const apiUrl = `https://eliteprotech-apis.zone.id/ssweb?url=${encodeURIComponent(url)}`;
-      const response = await axios.get(apiUrl, {
+      const response = await api.get(apiUrl, { // Use global api instance
         timeout: 30000,
         responseType: 'arraybuffer',
         headers: {
@@ -495,7 +380,7 @@ const APIs = {
   textToSpeech: async (text) => {
     try {
       const apiUrl = `https://www.laurine.site/api/tts/tts-nova?text=${encodeURIComponent(text)}`;
-      const response = await axios.get(apiUrl, {
+      const response = await api.get(apiUrl, { // Use global api instance
         timeout: 30000,
         headers: {
           'accept': '*/*',
@@ -533,3 +418,4 @@ const APIs = {
 };
 
 module.exports = APIs;
+

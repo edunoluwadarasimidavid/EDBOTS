@@ -4,7 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const config = require('./config');
+const config = require('./config'); // Assuming config.js provides defaultGroupSettings
 
 const DB_PATH = path.join(__dirname, 'database');
 const GROUPS_DB = path.join(DB_PATH, 'groups.json');
@@ -12,16 +12,21 @@ const USERS_DB = path.join(DB_PATH, 'users.json');
 const WARNINGS_DB = path.join(DB_PATH, 'warnings.json');
 const MODS_DB = path.join(DB_PATH, 'mods.json');
 
+// In-memory cache for database files
+const cache = {};
+
 // Initialize database directory
 if (!fs.existsSync(DB_PATH)) {
   fs.mkdirSync(DB_PATH, { recursive: true });
 }
 
-// Initialize database files
+// Initialize database files and load into cache
 const initDB = (filePath, defaultData = {}) => {
   if (!fs.existsSync(filePath)) {
     fs.writeFileSync(filePath, JSON.stringify(defaultData, null, 2));
   }
+  // Load initial data into cache
+  cache[filePath] = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 };
 
 initDB(GROUPS_DB, {});
@@ -29,24 +34,27 @@ initDB(USERS_DB, {});
 initDB(WARNINGS_DB, {});
 initDB(MODS_DB, { moderators: [] });
 
-// Read database
+// Read database (from cache if available, otherwise from file)
 const readDB = (filePath) => {
-  try {
-    const data = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(data);
-  } catch (error) {
-    console.error(`Error reading database: ${error.message}`);
-    return {};
+  if (!cache[filePath]) {
+    try {
+      cache[filePath] = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    } catch (error) {
+      console.error(`Error reading database file ${filePath}: ${error.message}`);
+      cache[filePath] = {}; // Fallback to empty object on error
+    }
   }
+  return cache[filePath];
 };
 
-// Write database
+// Write database (to file and update cache)
 const writeDB = (filePath, data) => {
   try {
+    cache[filePath] = data; // Update cache first
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
     return true;
   } catch (error) {
-    console.error(`Error writing database: ${error.message}`);
+    console.error(`Error writing database file ${filePath}: ${error.message}`);
     return false;
   }
 };
@@ -56,13 +64,13 @@ const getGroupSettings = (groupId) => {
   const groups = readDB(GROUPS_DB);
   if (!groups[groupId]) {
     groups[groupId] = { ...config.defaultGroupSettings };
-    writeDB(GROUPS_DB, groups);
+    writeDB(GROUPS_DB, groups); // This will update the cache as well
   }
   return groups[groupId];
 };
 
 const updateGroupSettings = (groupId, settings) => {
-  const groups = readDB(GROUPS_DB);
+  const groups = readDB(GROUPS_DB); // Get from cache
   groups[groupId] = { ...groups[groupId], ...settings };
   return writeDB(GROUPS_DB, groups);
 };

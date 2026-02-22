@@ -4,6 +4,7 @@
 
 const config = require('../../config');
 const { loadCommands } = require('../../utils/commandLoader');
+const versionData = require('../../version.json');
 
 module.exports = {
   name: 'menu',
@@ -148,7 +149,7 @@ module.exports = {
       
       menuText += `╰━━━━━━━━━━━━━━━━━\n\n`;
       menuText += `💡 Type ${config.prefix}help <command> for more info\n`;
-      menuText += `🌟 Bot Version: 1.0.0\n`;
+      menuText += `🌟 Bot Version: ${versionData.version}\n`;
       
       // Send menu with image
       const fs = require('fs');
