@@ -242,6 +242,84 @@ const handleMessage = async (sock, msg) => {
 
 // ... (handleGroupUpdate and initializeAntiCall remain largely the same, but without `delete require.cache`)
 
+// Group participant update handler
+const handleGroupUpdate = async (sock, update) => {
+  try {
+    const { id, participants, action } = update;
+    
+    // Validate group JID before processing
+    if (!id || !id.endsWith('@g.us')) {
+      return;
+    }
+    
+    const groupSettings = database.getGroupSettings(id);
+    
+    if (!groupSettings.welcome && !groupSettings.goodbye) return;
+    
+    const groupMetadata = await getGroupMetadata(sock, id);
+    if (!groupMetadata) return; // Skip if metadata unavailable (forbidden or error)
+    
+    for (const participantJid of participants) {
+      const participantNumber = participantJid.split('@')[0];
+      
+      if (action === 'add' && groupSettings.welcome) {
+        let welcomeMsg = groupSettings.welcomeMessage || 'Welcome @user to @group!';
+        welcomeMsg = welcomeMsg.replace('@user', `@${participantNumber}`).replace('@group', groupMetadata.subject);
+        await sock.sendMessage(id, { text: welcomeMsg, mentions: [participantJid] });
+      } else if (action === 'remove' && groupSettings.goodbye) {
+        let goodbyeMsg = groupSettings.goodbyeMessage || 'Goodbye @user!';
+        goodbyeMsg = goodbyeMsg.replace('@user', `@${participantNumber}`);
+        await sock.sendMessage(id, { text: goodbyeMsg, mentions: [participantJid] });
+      }
+    }
+  } catch (error) {
+    console.error('Error handling group update:', error);
+  }
+};
+
+
+// Group participant update handler
+const handleGroupUpdate = async (sock, update) => {
+  try {
+    const { id, participants, action } = update;
+    
+    // Validate group JID before processing
+    if (!id || !id.endsWith('@g.us')) {
+      return;
+    }
+    
+    const groupSettings = database.getGroupSettings(id);
+    
+    if (!groupSettings.welcome && !groupSettings.goodbye) return;
+    
+    const groupMetadata = await getGroupMetadata(sock, id);
+    if (!groupMetadata) return; // Skip if metadata unavailable
+
+    for (const participantJid of participants) {
+      const participantNumber = participantJid.split('@')[0];
+      
+      if (action === 'add' && groupSettings.welcome) {
+        // A simple welcome message implementation
+        let welcomeMsg = groupSettings.welcomeMessage || 'Welcome @user to the group!';
+        welcomeMsg = welcomeMsg.replace('@user', `@${participantNumber}`).replace('@group', groupMetadata.subject);
+        await sock.sendMessage(id, { text: welcomeMsg, mentions: [participantJid] });
+      } else if (action === 'remove' && groupSettings.goodbye) {
+        // A simple goodbye message implementation
+        let goodbyeMsg = groupSettings.goodbyeMessage || 'Goodbye @user, we will miss you!';
+        goodbyeMsg = goodbyeMsg.replace('@user', `@${participantNumber}`);
+        await sock.sendMessage(id, { text: goodbyeMsg, mentions: [participantJid] });
+      }
+    }
+  } catch (error) {
+    console.error('Error in handleGroupUpdate:', error);
+  }
+};
+
+// Anti-call feature initializer
+const initializeAntiCall = (sock) => {
+  // ... (rest of the function is unchanged)
+};
+
 module.exports = {
   handleMessage,
   handleGroupUpdate,
