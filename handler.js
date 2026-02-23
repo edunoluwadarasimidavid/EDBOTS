@@ -56,14 +56,25 @@ const getLiveGroupMetadata = async (sock, groupId) => {
 
 const getGroupMetadata = getCachedGroupMetadata;
 
-// Helper: Normalize JID
-const normalizeJid = (jid) => jid?.split('@')[0] + '@s.whatsapp.net';
+// Helper: Normalize phone numbers for owner check
+const normalizeNumber = (jid) => {
+    if (!jid) return '';
+    return jid.replace(/[^0-9]/g, '');
+};
 
 // Permissions
 const isOwner = (sender) => {
   if (!sender) return false;
-  const senderNumber = normalizeJid(sender);
-  return config.ownerNumber.some(owner => normalizeJid(owner) === senderNumber);
+  // Normalize the sender's JID to a number string
+  const senderNumber = normalizeNumber(sender.split('@')[0]);
+  
+  // Get and normalize owner numbers from config
+  const owners = (config.owner || []).map(owner => normalizeNumber(owner));
+
+  console.log("Sender:", senderNumber);
+  console.log("Owners:", owners);
+
+  return owners.includes(senderNumber);
 };
 
 const isMod = (sender) => {
@@ -287,7 +298,7 @@ const handleGroupUpdate = async (sock, update) => {
 
 // --- Anti-Call ---
 const initializeAntiCall = (sock) => {
-  sock.on('call', async (call) => {
+  sock.ev.on('call', async (call) => {
     const from = call.from;
     const callType = call.isVideo ? 'video' : 'voice';
     if (config.antiCall) {

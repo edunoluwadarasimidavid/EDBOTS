@@ -543,16 +543,6 @@ async function startBot() {
             await sock.readMessages([msg.key]);
           } catch (e) {}
         }
-       
-        // Handle anti-link in groups
-        if (from.endsWith('@g.us')) {
-          try {
-            const groupMetadata = await handler.getGroupMetadata(sock, msg.key.remoteJid);
-            if (groupMetadata) {
-              await handler.handleAntilink(sock, msg, groupMetadata);
-            }
-          } catch (error) {}
-        }
       });
     }
   });
@@ -607,7 +597,7 @@ process.on('uncaughtException', (err) => {
     console.warn('⚠️ Cleanup completed. Bot will continue but may experience issues until space is freed.');
     return;
   }
-  console.error('Uncaught Exception:', err);
+  console.error('Uncaught Exception:', err, err.stack);
 });
 
 // Handle unhandled promise rejections
@@ -624,7 +614,7 @@ process.on('unhandledRejection', (err) => {
     console.warn('⚠️ Rate limit reached. Please slow down your requests.');
     return;
   }
-  console.error('Unhandled Rejection:', err);
+  console.error('Unhandled Rejection:', err, err.stack);
 });
 
 // Export store for external use
