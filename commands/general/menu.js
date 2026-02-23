@@ -87,7 +87,13 @@ module.exports = {
         menuText += `┃ 👑 OWNER COMMAND\n`;
         menuText += `┗━━━━━━━━━━━━━━━━━\n`;
         categories.owner.forEach(cmd => {
-          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
+          if (cmd.name === 'update') {
+            menuText += `│ ➜ ${config.prefix}update → Update bot to latest version\n`;
+            menuText += `│ ➜ ${config.prefix}update rollback → Rollback to previous version\n`;
+            menuText += `│ ➜ ${config.prefix}update rollback <version> → Rollback to specific version\n`;
+          } else {
+            menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
+          }
         });
         menuText += `\n`;
       }

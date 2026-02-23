@@ -11,9 +11,9 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 
-// Group metadata cache to prevent rate limiting
+// Group metadata cache
 const groupMetadataCache = new Map();
-const CACHE_TTL = 60000; // 1 minute cache
+const CACHE_TTL = 60000; // 1 minute
 
 // Load all commands
 const commands = loadCommands();
@@ -29,28 +29,41 @@ const getMessageContent = (msg) => {
   return m;
 };
 
-// Cached group metadata getter with rate limit handling
+// Cached group metadata getter
 const getCachedGroupMetadata = async (sock, groupId) => {
-  // ... (implementation remains the same)
+  const now = Date.now();
+  const cached = groupMetadataCache.get(groupId);
+  if (cached && now - cached.timestamp < CACHE_TTL) return cached.metadata;
+  try {
+    const metadata = await sock.groupMetadata(groupId);
+    groupMetadataCache.set(groupId, { metadata, timestamp: now });
+    return metadata;
+  } catch (e) {
+    console.error('[GroupMetadata Error]', e.message);
+    return null;
+  }
 };
 
-// Live group metadata getter (always fresh, no cache)
+// Live group metadata getter
 const getLiveGroupMetadata = async (sock, groupId) => {
-  // ... (implementation remains the same)
+  try {
+    return await sock.groupMetadata(groupId);
+  } catch (e) {
+    console.error('[LiveGroupMetadata Error]', e.message);
+    return null;
+  }
 };
 
 const getGroupMetadata = getCachedGroupMetadata;
 
-// Helper functions for permissions
+// Helper: Normalize JID
+const normalizeJid = (jid) => jid?.split('@')[0] + '@s.whatsapp.net';
+
+// Permissions
 const isOwner = (sender) => {
   if (!sender) return false;
-  const normalizedSender = normalizeJidWithLid(sender);
-  const senderNumber = normalizeJid(normalizedSender);
-  return config.ownerNumber.some(owner => {
-    const normalizedOwner = normalizeJidWithLid(owner.includes('@') ? owner : `${owner}@s.whatsapp.net`);
-    const ownerNumber = normalizeJid(normalizedOwner);
-    return ownerNumber === senderNumber;
-  });
+  const senderNumber = normalizeJid(sender);
+  return config.ownerNumber.some(owner => normalizeJid(owner) === senderNumber);
 };
 
 const isMod = (sender) => {
@@ -58,17 +71,24 @@ const isMod = (sender) => {
   return database.isModerator(number);
 };
 
-// ... (All other JID and participant helpers remain the same)
-// normalizeJid, getLidMappingValue, normalizeJidWithLid, buildComparableIds, findParticipant, isAdmin, isBotAdmin, etc.
-
 // System JID filter
 const isSystemJid = (jid) => {
   if (!jid) return true;
   return jid.includes('@broadcast') || jid.includes('status.broadcast') || jid.includes('@newsletter');
 };
 
-// --- Refactored Helper Functions ---
+// Placeholder helpers for admin checks
+const isAdmin = async (sock, sender, groupId, metadata) => {
+  if (!metadata) return false;
+  return metadata.participants.some(p => p.id === sender && p.admin !== null);
+};
+const isBotAdmin = async (sock, groupId, metadata) => {
+  if (!metadata) return false;
+  const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+  return metadata.participants.some(p => p.id === botJid && p.admin !== null);
+};
 
+// --- Auto React ---
 const handleAutoReact = async (sock, msg, config) => {
   try {
     if (config.autoReact && msg.message && !msg.key.fromMe) {
@@ -89,6 +109,7 @@ const handleAutoReact = async (sock, msg, config) => {
   }
 };
 
+// --- Auto Sticker ---
 const handleAutoSticker = async (sock, msg, content, commands, context) => {
   try {
     if (context.isGroup) {
@@ -98,27 +119,25 @@ const handleAutoSticker = async (sock, msg, content, commands, context) => {
           const stickerCmd = commands.get('sticker');
           if (stickerCmd) {
             await stickerCmd.execute(sock, msg, [], context);
-            return true; // Sticker was created, stop further processing
+            return true;
           }
         }
       }
     }
-  } catch (error) {
-    console.error('[AutoSticker Error]:', error);
+  } catch (e) {
+    console.error('[AutoSticker Error]', e);
   }
   return false;
 };
 
+// --- Group Protections ---
 const handleGroupProtections = async (sock, msg, content, groupMetadata, context) => {
   try {
-    if (!context.isGroup || context.isOwner || context.isAdmin) {
-      return false; // No protections for DMs, owners, or admins
-    }
-
+    if (!context.isGroup || context.isOwner || context.isAdmin) return false;
     const groupSettings = database.getGroupSettings(context.from);
     const { from, sender, isBotAdmin, body } = context;
 
-    // --- Antilink ---
+    // Antilink
     if (groupSettings.antilink) {
       const linkPattern = /(https?:\/\/)?([a-zA-Z0-9][a-zA-Z0-9-]*\.)+[a-zA-Z]{2,}/i;
       if (linkPattern.test(body)) {
@@ -129,43 +148,40 @@ const handleGroupProtections = async (sock, msg, content, groupMetadata, context
         return true;
       }
     }
-    
-    // --- Antitag & Antiall ---
+
+    // Antitag / Antiall
     if (groupSettings.antitag || groupSettings.antiall) {
       const mentionedJids = content.extendedTextMessage?.contextInfo?.mentionedJid || [];
       const totalMentions = mentionedJids.length;
       const participantsCount = groupMetadata.participants.length;
-      
-      // Antiall is a simpler version of antitag
-      if (groupSettings.antiall || (groupSettings.antitag && totalMentions > 5 && totalMentions >= participantsCount * 0.5)) {
+      if ((groupSettings.antiall && totalMentions > 0) || (groupSettings.antitag && totalMentions > 5 && totalMentions >= participantsCount * 0.5)) {
         await sock.sendMessage(from, { delete: msg.key });
         if (groupSettings.antitagAction === 'kick' && isBotAdmin) {
-            await sock.groupParticipantsUpdate(from, [sender], 'remove');
+          await sock.groupParticipantsUpdate(from, [sender], 'remove');
         }
         return true;
       }
     }
 
-    // --- Antigroupmention ---
+    // Antigroupmention
     if (groupSettings.antigroupmention) {
-      if (msg.message?.contextInfo?.forwardedNewsletterMessageInfo || msg.message?.groupStatusMentionMessage) {
+      if (msg.message?.contextInfo?.forwardedNewsletterMessageInfo) {
         await sock.sendMessage(from, { delete: msg.key });
         if (groupSettings.antigroupmentionAction === 'kick' && isBotAdmin) {
-            await sock.groupParticipantsUpdate(from, [sender], 'remove');
+          await sock.groupParticipantsUpdate(from, [sender], 'remove');
         }
         return true;
       }
     }
 
-    return false; // No protection triggered
-  } catch (error) {
-    console.error('Error in group protection handler:', error);
+    return false;
+  } catch (e) {
+    console.error('[GroupProtections Error]', e);
     return false;
   }
 };
 
 // --- Main Message Handler ---
-
 const handleMessage = async (sock, msg) => {
   try {
     if (!msg.message || isSystemJid(msg.key.remoteJid)) return;
@@ -179,7 +195,7 @@ const handleMessage = async (sock, msg) => {
     const sender = msg.key.fromMe ? (sock.user.id.split(':')[0] + '@s.whatsapp.net') : (msg.key.participant || from);
     const isGroup = from.endsWith('@g.us');
     const groupMetadata = isGroup ? await getGroupMetadata(sock, from) : null;
-    
+
     let body = content.conversation || content.extendedTextMessage?.text || content.imageMessage?.caption || content.videoMessage?.caption || '';
     body = body.trim();
 
@@ -198,20 +214,19 @@ const handleMessage = async (sock, msg) => {
 
     if (isGroup) addMessage(from, sender);
 
-    // Button response handler
+    // Button response
     const btn = content.buttonsResponseMessage;
     if (btn) {
       const btnCmd = commands.get(btn.selectedButtonId.replace('btn_', ''));
       if (btnCmd) await btnCmd.execute(sock, msg, [], commandContext);
       return;
     }
-    
+
     if (!body.startsWith(config.prefix)) return;
 
     const args = body.slice(config.prefix.length).trim().split(/\s+/);
     const commandName = args.shift().toLowerCase();
     const command = commands.get(commandName);
-
     if (!command) return;
 
     // Permission checks
@@ -228,96 +243,58 @@ const handleMessage = async (sock, msg) => {
     console.log(`Executing command: ${commandName} from ${sender}`);
     await command.execute(sock, msg, args, commandContext);
 
-  } catch (error) {
-    console.error('Error in message handler:', error);
-    if (error.message && !error.message.includes('rate-overlimit')) {
-        try {
-            await sock.sendMessage(msg.key.remoteJid, { text: `${config.messages.error}\n\n${error.message}` }, { quoted: msg });
-        } catch (e) {
-            console.error('Error sending error message:', e);
-        }
+  } catch (e) {
+    console.error('[MessageHandler Error]', e);
+    if (e.message && !e.message.includes('rate-overlimit')) {
+      try {
+        await sock.sendMessage(msg.key.remoteJid, { text: `${config.messages.error}\n\n${e.message}` }, { quoted: msg });
+      } catch (err) {
+        console.error('[ErrorMessage Send]', err);
+      }
     }
   }
 };
 
-// ... (handleGroupUpdate and initializeAntiCall remain largely the same, but without `delete require.cache`)
-
-// Group participant update handler
+// --- Group Participant Update ---
 const handleGroupUpdate = async (sock, update) => {
   try {
     const { id, participants, action } = update;
-    
-    // Validate group JID before processing
-    if (!id || !id.endsWith('@g.us')) {
-      return;
-    }
-    
+    if (!id || !id.endsWith('@g.us')) return;
+
     const groupSettings = database.getGroupSettings(id);
-    
     if (!groupSettings.welcome && !groupSettings.goodbye) return;
-    
+
     const groupMetadata = await getGroupMetadata(sock, id);
-    if (!groupMetadata) return; // Skip if metadata unavailable (forbidden or error)
-    
+    if (!groupMetadata) return;
+
     for (const participantJid of participants) {
       const participantNumber = participantJid.split('@')[0];
-      
+
       if (action === 'add' && groupSettings.welcome) {
         let welcomeMsg = groupSettings.welcomeMessage || 'Welcome @user to @group!';
-        welcomeMsg = welcomeMsg.replace('@user', `@${participantNumber}`).replace('@group', groupMetadata.subject);
+        welcomeMsg = welcomeMsg.replace(/@user/g, `@${participantNumber}`).replace(/@group/g, groupMetadata.subject);
         await sock.sendMessage(id, { text: welcomeMsg, mentions: [participantJid] });
       } else if (action === 'remove' && groupSettings.goodbye) {
         let goodbyeMsg = groupSettings.goodbyeMessage || 'Goodbye @user!';
-        goodbyeMsg = goodbyeMsg.replace('@user', `@${participantNumber}`);
+        goodbyeMsg = goodbyeMsg.replace(/@user/g, `@${participantNumber}`);
         await sock.sendMessage(id, { text: goodbyeMsg, mentions: [participantJid] });
       }
     }
-  } catch (error) {
-    console.error('Error handling group update:', error);
+  } catch (e) {
+    console.error('[GroupUpdate Error]', e);
   }
 };
 
-
-// Group participant update handler
-const handleGroupUpdate = async (sock, update) => {
-  try {
-    const { id, participants, action } = update;
-    
-    // Validate group JID before processing
-    if (!id || !id.endsWith('@g.us')) {
-      return;
-    }
-    
-    const groupSettings = database.getGroupSettings(id);
-    
-    if (!groupSettings.welcome && !groupSettings.goodbye) return;
-    
-    const groupMetadata = await getGroupMetadata(sock, id);
-    if (!groupMetadata) return; // Skip if metadata unavailable
-
-    for (const participantJid of participants) {
-      const participantNumber = participantJid.split('@')[0];
-      
-      if (action === 'add' && groupSettings.welcome) {
-        // A simple welcome message implementation
-        let welcomeMsg = groupSettings.welcomeMessage || 'Welcome @user to the group!';
-        welcomeMsg = welcomeMsg.replace('@user', `@${participantNumber}`).replace('@group', groupMetadata.subject);
-        await sock.sendMessage(id, { text: welcomeMsg, mentions: [participantJid] });
-      } else if (action === 'remove' && groupSettings.goodbye) {
-        // A simple goodbye message implementation
-        let goodbyeMsg = groupSettings.goodbyeMessage || 'Goodbye @user, we will miss you!';
-        goodbyeMsg = goodbyeMsg.replace('@user', `@${participantNumber}`);
-        await sock.sendMessage(id, { text: goodbyeMsg, mentions: [participantJid] });
-      }
-    }
-  } catch (error) {
-    console.error('Error in handleGroupUpdate:', error);
-  }
-};
-
-// Anti-call feature initializer
+// --- Anti-Call ---
 const initializeAntiCall = (sock) => {
-  // ... (rest of the function is unchanged)
+  sock.on('call', async (call) => {
+    const from = call.from;
+    const callType = call.isVideo ? 'video' : 'voice';
+    if (config.antiCall) {
+      await sock.sendMessage(from, { text: `📵 Anti-call is active. You cannot ${callType} call me.` });
+      try { await sock.updateBlockStatus(from, 'block'); } catch {}
+    }
+  });
 };
 
 module.exports = {
@@ -328,6 +305,5 @@ module.exports = {
   isAdmin,
   isBotAdmin,
   isMod,
-  getGroupMetadata,
-  findParticipant
+  getGroupMetadata
 };
