@@ -112,33 +112,50 @@ function ensureSessionFolder() {
 }
 
 /**
- * Load session ID from multiple sources
- * Priority: 1. Environment variable, 2. session_key.js file
- * @returns {string} Session ID or empty string
+ * Load session ID from multiple sources.
+ * This function handles loading the session ID from an environment variable
+ * or a local file (session_key.js). It is designed to be robust,
+ * handling cases where the file might be missing or malformed without
+ * crashing or logging unnecessary errors.
+ *
+ * @returns {string} The session ID if found, otherwise an empty string.
  */
 function loadSessionID() {
-  // Priority 1: Environment variable
+  // Priority 1: Load from environment variable (SESSION_ID)
+  // This is the recommended method for production and containerized environments.
   if (process.env.SESSION_ID) {
-    console.log('📡 Session: Loading from environment variable');
+    console.log('📡 Session: Loading from environment variable.');
     return process.env.SESSION_ID;
   }
 
-  // Priority 2: session_key.js file
-  if (fs.existsSync(SESSION_KEY_FILE)) {
-    try {
-      // Clear require cache to get fresh data
+  // Priority 2: Load from local file (session/session_key.js)
+  // This is useful for local development and persistence.
+  try {
+    // Check if the session file exists before trying to load it.
+    if (fs.existsSync(SESSION_KEY_FILE)) {
+      // Dynamically require the file.
+      // We clear the cache first to ensure we get the latest version.
       delete require.cache[require.resolve(SESSION_KEY_FILE)];
-      const sessionKey = require(SESSION_KEY_FILE);
-      
-      if (sessionKey.sessionID) {
-        console.log('📡 Session: Loading from session_key.js');
-        return sessionKey.sessionID;
-      }
-    } catch (err) {
-      console.warn('⚠️ Failed to load session_key.js:', err.message);
-    }
-  }
+      const sessionData = require(SESSION_KEY_FILE);
 
+      if (sessionData && sessionData.sessionID) {
+        console.log('📡 Session: Successfully loaded from local session file.');
+        return sessionData.sessionID;
+      } else {
+        // This case handles a file that exists but is empty or doesn't have sessionID.
+        console.warn('⚠️ Session: Found session file, but it appears to be empty or malformed.');
+        return '';
+      }
+    }
+  } catch (error) {
+    // This catches errors during file access or `require()`, e.g., syntax errors in the file.
+    console.error(`❌ Session: Critical error loading session file. Please check for syntax errors or file permissions. Details: ${error.message}`);
+    // Proceeding without a session ID, which will trigger a QR scan.
+    return '';
+  }
+  
+  // If the file doesn't exist, return empty string silently.
+  // This is expected on first startup and not an error.
   return '';
 }
 
