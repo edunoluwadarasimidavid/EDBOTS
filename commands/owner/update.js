@@ -1,21 +1,20 @@
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
 const config = require('../../config');
+const path = require('path');
+const fs = require('fs').promises;
+const axios = require('axios');
+
+const rootDir = path.join(__dirname, '..', '..');
 
 module.exports = {
   name: 'update',
-  description: 'Updates the bot from the git repository.',
+  description: 'Updates the bot from a remote zip file.',
   ownerOnly: true,
   category: 'owner',
   async execute(sock, msg, args, context) {
-    const command = args[0] ? args[0].toLowerCase() : 'update';
-
     try {
-      if (command === 'rollback') {
-        await handleRollback(sock, msg, args, context);
-      } else {
-        await handleUpdate(sock, msg, context);
-      }
+      await handleUpdate(sock, msg, context);
     } catch (e) {
       console.error('[Update Error]', e);
       await context.reply(`❌ Update failed: ${e.message}`);
@@ -25,58 +24,70 @@ module.exports = {
 
 async function handleUpdate(sock, msg, context) {
   await context.react('⏳');
-  console.log('[Updater] Fetching updates from origin...');
-  await exec('git fetch origin');
+  console.log('[Updater] Starting update from zip URL...');
 
-  console.log('[Updater] Pulling updates from main...');
-  const { stdout: pullOutput } = await exec('git pull origin main');
-
-  if (pullOutput.includes('Already up to date.')) {
-    return await context.reply('✅ Bot is already up to date.');
+  const zipUrl = config.updateZipUrl;
+  if (!zipUrl) {
+    return await context.reply('❌ Update URL is not configured.');
   }
 
-  console.log('[Updater] Getting current version...');
-  const { stdout: version } = await exec('git describe --tags --abbrev=0');
-  const trimmedVersion = version.trim();
+  const tempZipPath = path.join(rootDir, 'update.zip');
+  const tempExtractPath = path.join(rootDir, 'update_temp');
 
-  await context.reply(`✅ Updated successfully to version: ${trimmedVersion}`);
-  console.log(`[Updater] Bot updated to ${trimmedVersion}. Restarting...`);
-  process.exit(1);
-}
+  try {
+    // Download the zip file
+    console.log(`[Updater] Downloading update from ${zipUrl}...`);
+    const response = await axios({
+      url: zipUrl,
+      method: 'GET',
+      responseType: 'stream',
+    });
 
-async function handleRollback(sock, msg, args, context) {
-  const targetVersion = args[1];
+    const writer = require('fs').createWriteStream(tempZipPath);
+    response.data.pipe(writer);
 
-  await context.react('⏳');
-  console.log('[Updater] Fetching all tags for rollback...');
-  await exec('git fetch --all --tags');
+    await new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+    });
 
-  let rollbackVersion;
+    console.log('[Updater] Download complete. Extracting...');
 
-  if (targetVersion) {
-    console.log(`[Updater] Rolling back to specific version: ${targetVersion}`);
-    const { stdout: tags } = await exec('git tag -l');
-    if (!tags.split('\n').includes(targetVersion)) {
-      return await context.reply(`❌ Version ${targetVersion} not found.`);
+    // Extract the zip file
+    await exec(`unzip -o "${tempZipPath}" -d "${tempExtractPath}"`, { cwd: rootDir });
+
+    // Find the subdirectory inside the extracted folder
+    const extractContents = await fs.readdir(tempExtractPath);
+    const subDir = extractContents.find(item => item.startsWith('EDBOTS-main'));
+    if (!subDir) {
+      throw new Error('Could not find the main directory in the update zip.');
     }
-    rollbackVersion = targetVersion;
-  } else {
-    console.log('[Updater] Rolling back to previous version...');
-    const { stdout: tags } = await exec('git tag -l --sort=-creatordate');
-    const tagList = tags.split('\n').filter(t => t);
-    if (tagList.length < 2) {
-      return await context.reply('❌ No previous version found to rollback to.');
+    const sourceDir = path.join(tempExtractPath, subDir);
+
+    // Move files to the root directory
+    console.log(`[Updater] Moving files from ${sourceDir} to ${rootDir}...`);
+    // Use shell command to move all files, including hidden ones
+    await exec(`shopt -s dotglob && mv ${sourceDir}/* "${rootDir}"`);
+
+    await context.reply('✅ Bot updated successfully! Restarting...');
+    console.log('[Updater] Update complete. Restarting...');
+    process.exit(1);
+
+  } catch (error) {
+    console.error('[Updater] An error occurred during the update process:', error);
+    await context.reply(`❌ Update failed: ${error.message}`);
+  } finally {
+    // Cleanup temporary files and folders
+    console.log('[Updater] Cleaning up temporary files...');
+    try {
+      await fs.unlink(tempZipPath);
+    } catch (e) {
+      // ignore
     }
-    rollbackVersion = tagList[1];
+    try {
+      await fs.rm(tempExtractPath, { recursive: true, force: true });
+    } catch (e) {
+      // ignore
+    }
   }
-
-  console.log(`[Updater] Checking out to version: ${rollbackVersion}`);
-  await exec(`git checkout tags/${rollbackVersion} -f`);
-
-  const { stdout: version } = await exec('git describe --tags --abbrev=0');
-  const trimmedVersion = version.trim();
-
-  await context.reply(`🔁 Rolled back to version: ${trimmedVersion}`);
-  console.log(`[Updater] Rolled back to ${trimmedVersion}. Restarting...`);
-  process.exit(1);
 }
