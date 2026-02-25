@@ -80,7 +80,6 @@ console.warn = (...args) => {
 const pino = require('pino');
 const {
   default: makeWASocket,
-  useMultiFileAuthState,
   DisconnectReason,
   Browsers
 } = require('@whiskeysockets/baileys');
@@ -89,141 +88,8 @@ const config = require('./config');
 const handler = require('./handler');
 const fs = require('fs');
 const path = require('path');
-const zlib = require('zlib');
 const os = require('os');
-
-// ============================================
-// Session Configuration
-// Session files are stored in session/ folder
-// ============================================
-const SESSION_FOLDER = './session';
-const SESSION_KEY_FILE = path.join(SESSION_FOLDER, 'session_key.js');
-const CREDS_FILE = path.join(SESSION_FOLDER, 'creds.json');
-
-/**
- * Ensure the session folder exists
- * Creates it recursively if missing
- */
-function ensureSessionFolder() {
-  if (!fs.existsSync(SESSION_FOLDER)) {
-    fs.mkdirSync(SESSION_FOLDER, { recursive: true });
-    console.log(`📁 Created session folder: ${SESSION_FOLDER}`);
-  }
-}
-
-/**
- * Load session ID from multiple sources.
- * This function handles loading the session ID from an environment variable
- * or a local file (session_key.js). It is designed to be robust,
- * handling cases where the file might be missing or malformed without
- * crashing or logging unnecessary errors.
- *
- * @returns {string} The session ID if found, otherwise an empty string.
- */
-function loadSessionID() {
-  // Priority 1: Load from environment variable (SESSION_ID)
-  // This is the recommended method for production and containerized environments.
-  if (process.env.SESSION_ID) {
-    console.log('📡 Session: Loading from environment variable.');
-    return process.env.SESSION_ID;
-  }
-
-  // Priority 2: Load from local file (session/session_key.js)
-  // This is useful for local development and persistence.
-  try {
-    // Check if the session file exists before trying to load it.
-    if (fs.existsSync(SESSION_KEY_FILE)) {
-      // Dynamically require the file.
-      // We clear the cache first to ensure we get the latest version.
-      delete require.cache[require.resolve(SESSION_KEY_FILE)];
-      const sessionData = require(SESSION_KEY_FILE);
-
-      if (sessionData && sessionData.sessionID) {
-        console.log('📡 Session: Successfully loaded from local session file.');
-        return sessionData.sessionID;
-      } else {
-        // This case handles a file that exists but is empty or doesn't have sessionID.
-        console.warn('⚠️ Session: Found session file, but it appears to be empty or malformed.');
-        return '';
-      }
-    }
-  } catch (error) {
-    // This catches errors during file access or `require()`, e.g., syntax errors in the file.
-    console.error(`❌ Session: Critical error loading session file. Please check for syntax errors or file permissions. Details: ${error.message}`);
-    // Proceeding without a session ID, which will trigger a QR scan.
-    return '';
-  }
-  
-  // If the file doesn't exist, return empty string silently.
-  // This is expected on first startup and not an error.
-  return '';
-}
-
-/**
- * Process external session string and save to creds.json
- * Format: 'HEADER!BASE64DATA' (ED BOTS format)
- * @param {string} sessionString - The session string to process
- * @returns {boolean} Success status
- */
-function processSessionString(sessionString) {
-  if (!sessionString || !sessionString.includes('!')) {
-    return false;
-  }
-
-  try {
-    const [header, b64data] = sessionString.split('!');
-
-    if (!header || !b64data) {
-      throw new Error("Invalid session format. Expected 'HEADER!BASE64DATA'");
-    }
-
-    const cleanB64 = b64data.replace('...', '');
-    const compressedData = Buffer.from(cleanB64, 'base64');
-    const decompressedData = zlib.gunzipSync(compressedData);
-
-    ensureSessionFolder();
-    fs.writeFileSync(CREDS_FILE, decompressedData, 'utf8');
-    console.log(`📡 Session: 🔑 Retrieved from ${header} Session`);
-    return true;
-
-  } catch (e) {
-    console.error('📡 Session: ❌ Error processing session:', e.message);
-    return false;
-  }
-}
-
-/**
- * Save session ID to session_key.js file
- * This allows persistent session storage
- * @param {string} sessionString - Session string to save
- */
-function saveSessionID(sessionString) {
-  if (!sessionString) return;
-  
-  ensureSessionFolder();
-  
-  const fileContent = `/**
- * Session Key Storage - EDBOT
- * Built by: Edun Oluwadarasimi David
- * Keep this file secure and never commit to version control
- */
-
-module.exports = {
-    // Session ID from external source (ED BOTS format: 'HEADER!BASE64DATA')
-    sessionID: '${sessionString}',
-    
-    // Timestamp when session was saved
-    savedAt: '${new Date().toISOString()}'
-};
-`;
-  
-  try {
-    fs.writeFileSync(SESSION_KEY_FILE, fileContent, 'utf8');
-    console.log('💾 Session ID saved to session_key.js');
-  } catch (err) {
-    console.error('❌ Failed to save session ID:', err.message);
-  }
-}
+const { initializeAuth, generateSessionString } = require('./utils/session');
 
 /**
  * Remove Puppeteer cache to save disk space
@@ -357,23 +223,14 @@ const createSuppressedLogger = (level = 'silent') => {
 // Initializes and manages the WhatsApp connection
 // ============================================
 async function startBot() {
-  ensureSessionFolder();
-  
-  // Load and process session ID
-  const sessionID = loadSessionID();
-  
-  if (sessionID) {
-    const success = processSessionString(sessionID);
-    if (success && process.env.SESSION_ID) {
-      // If loaded from env, save to file for persistence
-      saveSessionID(sessionID);
-    }
-  } else {
-    console.log('📡 Session: No session ID found, waiting for QR code scan...');
-  }
- 
-  // Initialize auth state with session folder
-  const { state, saveCreds } = await useMultiFileAuthState(SESSION_FOLDER);
+  // --- Start of Refactored Session Logic ---
+  // The new `initializeAuth` function from `utils/session.js` now handles all session logic.
+  // 1. It ensures the session directory exists.
+  // 2. It restores the session from the `SESSION_ID` env var if it exists.
+  // 3. It calls `useMultiFileAuthState` to load or create the session.
+  // This approach is production-safe, container-friendly, and fixes the crash.
+  const { state, saveCreds } = await initializeAuth();
+  // --- End of Refactored Session Logic ---
  
   const suppressedLogger = createSuppressedLogger('silent');
  
@@ -405,9 +262,7 @@ async function startBot() {
   const watchdogInterval = setInterval(async () => {
     if (Date.now() - lastActivity > INACTIVITY_TIMEOUT && sock.ws.readyState === 1) {
       console.log('⚠️ No activity detected. Forcing reconnect...');
-      await sock.end(undefined, undefined, { reason: 'inactive' });
-      clearInterval(watchdogInterval);
-      setTimeout(() => startBot(), 5000);
+      await sock.end(new Error('Inactivity timeout'), { reason: 'inactive', isLogout: false });
     }
   }, 5 * 60 * 1000); // Check every 5 minutes
 
@@ -415,8 +270,6 @@ async function startBot() {
     const { connection } = update;
     if (connection === 'open') {
       lastActivity = Date.now();
-    } else if (connection === 'close') {
-      clearInterval(watchdogInterval);
     }
   });
  
@@ -429,24 +282,50 @@ async function startBot() {
    
     // Display QR code for scanning
     if (qr) {
-      console.log('\n\n📱 Scan this QR code with WhatsApp:\n');
+      console.log('\n\n------------------------------------------------');
+      console.log('📱 SCAN THIS QR CODE WITH WHATSAPP 📱');
+      console.log('------------------------------------------------\n');
       qrcode.generate(qr, { small: true });
+      console.log('\n[INFO] The QR code is valid for a short period. Scan it with your WhatsApp mobile app.');
     }
    
     // Handle connection close
     if (connection === 'close') {
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const errorMessage = lastDisconnect?.error?.message || 'Unknown error';
-     
-      if (statusCode === 515 || statusCode === 503 || statusCode === 408) {
-        console.log(`⚠️ Connection closed (${statusCode}). Reconnecting...`);
-      } else {
-        console.log('Connection closed due to:', errorMessage, '\nReconnecting:', shouldReconnect);
+      const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+      const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+      let reason = "Unknown reason";
+
+      if (statusCode) {
+          switch (statusCode) {
+              case DisconnectReason.connectionClosed:
+                  reason = "Connection closed";
+                  break;
+              case DisconnectReason.connectionLost:
+                  reason = "Connection lost";
+                  break;
+              case DisconnectReason.connectionReplaced:
+                  reason = "Connection replaced";
+                  break;
+              case DisconnectReason.loggedOut:
+                  reason = "Logged out";
+                  console.error("❌ Device has been logged out. Please delete the session folder and restart.");
+                  process.exit(1); // Exit because the session is invalid
+              case DisconnectReason.restartRequired:
+                  reason = "Restart required";
+                  break;
+              case DisconnectReason.timedOut:
+                  reason = "Connection timed out";
+                  break;
+              default:
+                  reason = `Unknown disconnect reason with status code: ${statusCode}`;
+          }
       }
+      
+      console.log(`🔌 Connection closed. Reason: ${reason}. Reconnecting: ${shouldReconnect}`);
      
       if (shouldReconnect) {
-        setTimeout(() => startBot(), 3000);
+        // Use a small delay before attempting to reconnect
+        setTimeout(() => startBot(), 5000);
       }
     } 
     // Handle connection open
@@ -459,6 +338,25 @@ async function startBot() {
       console.log(`👑 Owner: ${ownerNames}\n`);
       console.log('Bot is ready to receive messages!\n');
       
+      // --- Start of New Session ID Generation ---
+      // This is a new feature to improve usability in production environments.
+      // If the bot starts without a `SESSION_ID`, it means a new QR scan was needed.
+      // After connecting, we generate the new session string and display it for the user.
+      if (!process.env.SESSION_ID) {
+        const sessionString = generateSessionString();
+        if (sessionString) {
+          console.log('================================================================================');
+          console.log('🔑 NEW SESSION ID GENERATED 🔑');
+          console.log('\nTo avoid scanning the QR code next time, copy the entire block below');
+          console.log('and set it as the SESSION_ID environment variable in your deployment environment.');
+          console.log('\n--- COPY FROM HERE ---');
+          console.log(sessionString);
+          console.log('--- TO HERE ---\n');
+          console.log('================================================================================\n');
+        }
+      }
+      // --- End of New Session ID Generation ---
+
       // Update bio if enabled
       if (config.autoBio) {
         await sock.updateProfileStatus(`${config.botName} | Active 24/7`);
@@ -467,15 +365,15 @@ async function startBot() {
       // Initialize anti-call feature
       handler.initializeAntiCall(sock);
       
-      // Cleanup old chat messages
+      // Cleanup old chat messages from the in-memory store
       const now = Date.now();
       for (const [jid, chatMsgs] of store.messages.entries()) {
-        const timestamps = Array.from(chatMsgs.values()).map(m => m.messageTimestamp * 1000 || 0);
-        if (timestamps.length > 0 && now - Math.max(...timestamps) > 24 * 60 * 60 * 1000) {
+        const timestamps = Array.from(chatMsgs.values()).map(m => (m.messageTimestamp || 0) * 1000);
+        if (timestamps.length > 0 && (now - Math.max(...timestamps)) > 24 * 60 * 60 * 1000) {
           store.messages.delete(jid);
         }
       }
-      console.log(`🧹 Store cleaned. Active chats: ${store.messages.size}`);
+      console.log(`🧹 In-memory message store cleaned. Active chats: ${store.messages.size}`);
     }
   });
  
@@ -516,12 +414,14 @@ async function startBot() {
       const msgId = msg.key.id;
       if (processedMessages.has(msgId)) continue;
      
-      // Skip old messages (older than 5 minutes)
+      // Skip old messages (older than 5 minutes) to prevent processing backlog on reconnect
       const MESSAGE_AGE_LIMIT = 5 * 60 * 1000;
-      let messageAge = 0;
       if (msg.messageTimestamp) {
-        messageAge = Date.now() - (msg.messageTimestamp * 1000);
-        if (messageAge > MESSAGE_AGE_LIMIT) continue;
+        const messageAge = Date.now() - (msg.messageTimestamp * 1000);
+        if (messageAge > MESSAGE_AGE_LIMIT) {
+          console.log(`[MSG] Skipping old message from ${from} (age: ${Math.round(messageAge / 1000)}s)`);
+          continue;
+        }
       }
      
       processedMessages.add(msgId);
@@ -534,22 +434,24 @@ async function startBot() {
         const chatMsgs = store.messages.get(from);
         chatMsgs.set(msg.key.id, msg);
         
-        // Keep only recent messages
+        // Keep only recent messages by timestamp
         if (chatMsgs.size > store.maxPerChat) {
-          const sortedIds = Array.from(chatMsgs.entries())
-            .sort((a, b) => (a[1].messageTimestamp || 0) - (b[1].messageTimestamp || 0))
-            .map(([id]) => id);
-          for (let i = 0; i < sortedIds.length - store.maxPerChat; i++) {
-            chatMsgs.delete(sortedIds[i]);
+          const sortedEntries = Array.from(chatMsgs.entries())
+            .sort((a, b) => (a[1].messageTimestamp || 0) - (b[1].messageTimestamp || 0));
+          
+          // Delete the oldest entries until the size is correct
+          for (let i = 0; i < sortedEntries.length - store.maxPerChat; i++) {
+            chatMsgs.delete(sortedEntries[i][0]);
           }
         }
       }
      
       // Handle the message
       handler.handleMessage(sock, msg).catch(err => {
+        // Avoid logging common, non-critical errors
         if (!err.message?.includes('rate-overlimit') &&
             !err.message?.includes('not-authorized')) {
-          console.error('Error handling message:', err.message);
+          console.error(`❌ Error handling message from ${from}:`, err);
         }
       });
      
@@ -558,13 +460,15 @@ async function startBot() {
         if (config.autoRead && from.endsWith('@g.us')) {
           try {
             await sock.readMessages([msg.key]);
-          } catch (e) {}
+          } catch (e) {
+            // This can fail if the message is deleted, not a critical error
+          }
         }
       });
     }
   });
  
-  // Placeholder handlers for other events
+  // Placeholder handlers for other events to prevent unhandled event warnings
   sock.ev.on('message-receipt.update', () => {});
   sock.ev.on('messages.update', () => {});
  
@@ -575,9 +479,7 @@ async function startBot() {
  
   // Handle socket errors
   sock.ev.on('error', (error) => {
-    const statusCode = error?.output?.statusCode;
-    if (statusCode === 515 || statusCode === 503 || statusCode === 408) return;
-    console.error('Socket error:', error.message || error);
+    console.error('Socket error:', error);
   });
  
   return sock;
@@ -592,47 +494,59 @@ console.log(`⚡ Prefix: ${config.prefix}`);
 const ownerNames = Array.isArray(config.ownerName) ? config.ownerName.join(', ') : config.ownerName;
 console.log(`👑 Owner: ${ownerNames}\n`);
 
-// Clean up Puppeteer cache before starting
+// Clean up Puppeteer cache before starting to save disk space
 cleanupPuppeteerCache();
 
 // Start the bot
 startBot().catch(err => {
-  console.error('Error starting bot:', err);
+  console.error('❌ Critical Error during bot startup:', err);
   process.exit(1);
 });
 
 // ============================================
-// Error Handlers
+// Global Error Handlers
 // ============================================
 
-// Handle uncaught exceptions
+// Handle uncaught exceptions to prevent the bot from crashing
 process.on('uncaughtException', (err) => {
+  // Handle specific "no space left on device" error
   if (err.code === 'ENOSPC' || err.errno === -28 || err.message?.includes('no space left on device')) {
-    console.error('⚠️ ENOSPC Error: No space left on device. Attempting cleanup...');
-    const { cleanupOldFiles } = require('./utils/cleanup');
-    cleanupOldFiles();
-    console.warn('⚠️ Cleanup completed. Bot will continue but may experience issues until space is freed.');
+    console.error('⚠️ ENOSPC Error: No space left on device. The bot may become unstable. Please clear some disk space.');
+    // Attempt to run cleanup if possible
+    try {
+      const { cleanupOldFiles } = require('./utils/cleanup');
+      cleanupOldFiles();
+      console.warn('⚠️ Cleanup task attempted. Please verify disk space manually.');
+    } catch (cleanupErr) {
+      console.error('⚠️ Could not run cleanup task:', cleanupErr);
+    }
     return;
   }
-  console.error('Uncaught Exception:', err, err.stack);
+  console.error('💥 Uncaught Exception:', err, err.stack);
 });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-  if (err.code === 'ENOSPC' || err.errno === -28 || err.message?.includes('no space left on device')) {
+    // Handle specific "no space left on device" error
+  if (err && (err.code === 'ENOSPC' || err.errno === -28 || err.message?.includes('no space left on device'))) {
     console.warn('⚠️ ENOSPC Error in promise: No space left on device. Attempting cleanup...');
-    const { cleanupOldFiles } = require('./utils/cleanup');
-    cleanupOldFiles();
-    console.warn('⚠️ Cleanup completed. Bot will continue but may experience issues until space is freed.');
+    try {
+      const { cleanupOldFiles } = require('./utils/cleanup');
+      cleanupOldFiles();
+      console.warn('⚠️ Cleanup task attempted. Please verify disk space manually.');
+    } catch (cleanupErr) {
+      console.error('⚠️ Could not run cleanup task:', cleanupErr);
+    }
     return;
   }
  
-  if (err.message && err.message.includes('rate-overlimit')) {
-    console.warn('⚠️ Rate limit reached. Please slow down your requests.');
+  // Suppress common, non-critical rate limit errors from logging
+  if (err && err.message && err.message.includes('rate-overlimit')) {
+    console.warn('📈 Rate limit reached. Some requests may have been dropped.');
     return;
   }
-  console.error('Unhandled Rejection:', err, err.stack);
+  console.error('💥 Unhandled Rejection:', err, err.stack);
 });
 
-// Export store for external use
+// Export store for external use (e.g., in plugins or external scripts)
 module.exports = { store };
