@@ -1,40 +1,74 @@
 /**
  * =================================================================
- *                          EDBOT MAIN
+ *                          EDBOT V3
  * =================================================================
  *
- * This is the main entry point for the EDBOT WhatsApp bot.
+ * This file is the main entry point for the Baileys WhatsApp bot.
  *
- * Its primary responsibilities are:
- * 1. Setting up the environment: It tries to load environment variables
- *    from a `.env` file for local development. This is made optional
- *    to prevent crashes if `dotenv` is not installed or the file is
- *    missing, which is common in production.
+ * It is designed to be clean and simple, with two primary responsibilities:
  *
- * 2. Initializing the bot: It calls the main `initializeBot` function
- *    from `utils/session.js`, which contains all the core logic for
- *    session handling, connection, and event registration.
+ * 1. Environment Setup:
+ *    - It ensures a `.env.example` file exists to guide the user.
+ *    - It loads environment variables from a `.env` file (if present)
+ *      for easy local development. This is optional and safe for production.
  *
- * 3. Handling fatal errors: It wraps the bot initialization in a
- *    try/catch block to log any critical errors that occur during
- *    startup and exits gracefully.
+ * 2. Bot Initialization:
+ *    - It calls the main `initializeBot` function located in `./utils/session.js`.
+ *      All the complex logic for session handling, connection, and event
+ *      registration is encapsulated in that file.
+ *
+ * This structure promotes a clean separation of concerns and makes the
+ * project easier to understand and maintain.
  */
 
-// Import the core bot initializer.
+const fs = require('fs');
+const path = require('path');
 const { initializeBot } = require('./utils/session');
 
 /**
- * Loads environment variables from a .env file if available.
- * This is a helper for local development and is not required for production.
+ * Ensures that a `.env.example` file exists to guide the user.
+ * If the file is missing, it creates one with helpful comments.
+ */
+function ensureEnvExampleExists() {
+    const envExamplePath = path.join(__dirname, '.env.example');
+    if (!fs.existsSync(envExamplePath)) {
+        const exampleContent = `# -------------------------------------------------------------------
+#         ENVIRONMENT VARIABLES FOR BAILEYS WHATSAPP BOT
+#
+# -> For local development, you can rename this file to \`.env\` and fill in the values.
+# -> For production (Railway, Render, Docker), set these in your service's environment/secrets configuration.
+# -------------------------------------------------------------------
+
+# SESSION_ID: The most important variable for production deployments.
+#
+# HOW TO USE:
+# 1. On your first run, leave this variable EMPTY.
+# 2. Start the bot locally. You will be prompted to scan a QR code.
+# 3. After scanning, the bot will generate and print a long SESSION_ID string in your console.
+# 4. Copy that entire string and add it to your production environment variables.
+SESSION_ID=
+
+# BOT_NAME: The name for your bot, used in console logs.
+BOT_NAME=EDBOT V3
+
+# PORT: The server port for any web-related features.
+PORT=3000
+`;
+        fs.writeFileSync(envExamplePath, exampleContent, 'utf8');
+        console.log('[SYSTEM] Created .env.example file. Please configure it for your needs.');
+    }
+}
+
+/**
+ * Loads environment variables from a .env file for local development.
+ * This is wrapped in a try/catch to make it optional.
  */
 function setupEnvironment() {
     try {
-        // The dotenv package allows us to use a .env file for local configuration.
         require('dotenv').config();
         console.log('[SYSTEM] Loaded environment variables from .env file.');
     } catch (e) {
-        // This is not an error in production, where variables are set directly.
-        console.log('[SYSTEM] .env file not found or dotenv is not installed, proceeding with system environment variables.');
+        console.log('[SYSTEM] .env file not found or dotenv package not installed. Proceeding with system environment variables.');
     }
 }
 
@@ -46,18 +80,18 @@ async function main() {
     console.log('            🚀 STARTING EDBOT V3 🚀             ');
     console.log('=================================================');
 
-    // Set up environment variables for local development.
+    // 1. Ensure documentation and environment are set up.
+    ensureEnvExampleExists();
     setupEnvironment();
 
+    // 2. Defer to the session utility to handle all core logic.
     try {
-        // Defer to the session utility to handle all the complex setup.
         await initializeBot();
-        console.log('[SYSTEM] ✅ Bot initialization process completed successfully.');
+        console.log('[SYSTEM] ✅ Bot initialization process completed.');
     } catch (error) {
-        // If any unhandled error occurs during initialization, log it and exit.
         console.error('❌ FATAL ERROR DURING BOT INITIALIZATION ❌');
         console.error(error);
-        process.exit(1);
+        process.exit(1); // Exit with an error code.
     }
 }
 
