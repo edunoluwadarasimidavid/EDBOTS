@@ -15,7 +15,8 @@ lerna-debug.log*
 .env.production.local
 
 # Session and Database files
-session/
+session/*
+!session/session_key.js
 database/
 *.db
 

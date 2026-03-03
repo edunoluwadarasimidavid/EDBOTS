@@ -116,14 +116,37 @@ async function initializeBot() {
 
         createInstanceLock();
 
-        const sessionID = process.env.SESSION_ID;
         const credsPath = path.join(AUTH_DIR, 'creds.json');
+        const sessionKeyPath = path.join(AUTH_DIR, 'session_key.js');
+        const sessionKeyJsonPath = path.join(AUTH_DIR, 'sessionkey.json');
+        
+        let sessionID = process.env.SESSION_ID;
+
+        // Try to load from session_key.js or sessionkey.json if not in env
+        if (!sessionID) {
+            if (fs.existsSync(sessionKeyPath)) {
+                try {
+                    sessionID = require(sessionKeyPath);
+                    console.log('[AUTH] → Loaded SESSION_ID from session_key.js');
+                } catch (e) {
+                    console.warn('[AUTH] ! Error loading session_key.js:', e.message);
+                }
+            } else if (fs.existsSync(sessionKeyJsonPath)) {
+                try {
+                    const sessionKeyData = JSON.parse(fs.readFileSync(sessionKeyJsonPath, 'utf8'));
+                    sessionID = sessionKeyData.key || sessionKeyData.sessionID || sessionKeyData;
+                    console.log('[AUTH] → Loaded SESSION_ID from sessionkey.json');
+                } catch (e) {
+                    console.warn('[AUTH] ! Error loading sessionkey.json:', e.message);
+                }
+            }
+        }
         
         let useQR = false;
 
         // SESSION HANDLING LOGIC
-        if (sessionID && !envSessionFailed) {
-            console.log('[AUTH] → Found SESSION_ID in environment');
+        if (sessionID && typeof sessionID === 'string' && sessionID.trim() !== '' && !envSessionFailed) {
+            console.log('[AUTH] → Using identified SESSION_ID');
             try {
                 // Strip any prefix before '!' (e.g. 'KnightBot!', 'EDBOTS!')
                 const cleanSessionID = sessionID.includes('!') ? sessionID.split('!')[1] : sessionID;
@@ -132,7 +155,7 @@ async function initializeBot() {
                 // Validate if it's a proper JSON
                 JSON.parse(decoded);
                 
-                // Save it to creds.json to ensure persistence and support both
+                // Save it to creds.json (Bot creates it if not available)
                 fs.writeFileSync(credsPath, decoded, 'utf8');
                 console.log('[AUTH] ✓ SESSION_ID decoded and saved to creds.json');
             } catch (err) {
@@ -149,7 +172,7 @@ async function initializeBot() {
 ╔══════════════════════════════════════════════════════════════╗
 ║  SESSION DEBUG INFO                                          ║
 ╠══════════════════════════════════════════════════════════════╣
-║  ENV SESSION_ID present: ${!!sessionID && !envSessionFailed ? 'YES ✓' : 'NO ✗'}                          ║
+║  SESSION_ID source:      ${sessionID ? (process.env.SESSION_ID ? 'ENV' : (fs.existsSync(sessionKeyPath) ? 'session_key.js' : 'sessionkey.json')) : 'NONE'}                          ║
 ║  creds.json valid:       ${hasCredsFile ? 'YES ✓' : 'NO ✗'}                          ║
 ║  AUTH_DIR exists:        ${fs.existsSync(AUTH_DIR) ? 'YES ✓' : 'NO ✗'}                          ║
 ║  AUTH_DIR path:          ${AUTH_DIR}    ║
@@ -159,7 +182,11 @@ async function initializeBot() {
         if (hasCredsFile) {
             console.log('[AUTH] → Using creds.json for authentication');
         } else {
-            console.log('[AUTH] → No valid session found, QR code login required');
+            if (!sessionID) {
+                console.warn('[AUTH] ! Required session files missing in ./session/');
+                console.warn('[AUTH] ! Please provide a SESSION_ID or create session/session_key.js');
+            }
+            console.log('[AUTH] → Falling back to QR code login');
             useQR = true;
         }
 
