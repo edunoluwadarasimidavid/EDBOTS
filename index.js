@@ -1,99 +1,154 @@
-/**
- * =================================================================
- *                          EDBOT V3
- * =================================================================
- *
- * This file is the main entry point for the Baileys WhatsApp bot.
- *
- * It is designed to be clean and simple, with two primary responsibilities:
- *
- * 1. Environment Setup:
- *    - It ensures a `.env.example` file exists to guide the user.
- *    - It loads environment variables from a `.env` file (if present)
- *      for easy local development. This is optional and safe for production.
- *
- * 2. Bot Initialization:
- *    - It calls the main `initializeBot` function located in `./utils/session.js`.
- *      All the complex logic for session handling, connection, and event
- *      registration is encapsulated in that file.
- *
- * This structure promotes a clean separation of concerns and makes the
- * project easier to understand and maintain.
- */
-
+const {
+    default: makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    makeCacheableSignalKeyStore,
+    Browsers
+} = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
+const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const { initializeBot } = require('./utils/session');
+const config = require('./config');
+const { handleMessage, handleGroupUpdate, initializeAntiCall } = require('./handler');
 
-/**
- * Ensures that a `.env.example` file exists to guide the user.
- * If the file is missing, it creates one with helpful comments.
- */
-function ensureEnvExampleExists() {
-    const envExamplePath = path.join(__dirname, '.env.example');
-    if (!fs.existsSync(envExamplePath)) {
-        const exampleContent = `# -------------------------------------------------------------------
-#         ENVIRONMENT VARIABLES FOR BAILEYS WHATSAPP BOT
-#
-# -> For local development, you can rename this file to \`.env\` and fill in the values.
-# -> For production (Railway, Render, Docker), set these in your service's environment/secrets configuration.
-# -------------------------------------------------------------------
+async function startBot() {
+    const sessionDir = './session';
+    const credsPath = path.join(sessionDir, 'creds.json');
+    const sessionKeyPath = path.join(sessionDir, 'session_key.js');
 
-# SESSION_ID: The most important variable for production deployments.
-#
-# HOW TO USE:
-# 1. On your first run, leave this variable EMPTY.
-# 2. Start the bot locally. You will be prompted to scan a QR code.
-# 3. After scanning, the bot will generate and print a long SESSION_ID string in your console.
-# 4. Copy that entire string and add it to your production environment variables.
-SESSION_ID=
-
-# BOT_NAME: The name for your bot, used in console logs.
-BOT_NAME=EDBOT V3
-
-# PORT: The server port for any web-related features.
-PORT=3000
-`;
-        fs.writeFileSync(envExamplePath, exampleContent, 'utf8');
-        console.log('[SYSTEM] Created .env.example file. Please configure it for your needs.');
+    if (!fs.existsSync(sessionDir)) {
+        fs.mkdirSync(sessionDir);
     }
+
+    // --- SESSION IMPORT LOGIC ---
+    // If creds.json doesn't exist, try to import from Session Key
+    if (!fs.existsSync(credsPath)) {
+        let sessionID = process.env.SESSION_ID;
+
+        // Try to load from session_key.js if not in env
+        if (!sessionID && fs.existsSync(sessionKeyPath)) {
+            try {
+                const imported = require(sessionKeyPath);
+                sessionID = typeof imported === 'string' ? imported : (imported.sessionID || imported.key);
+            } catch (e) {
+                console.warn('[AUTH] Error reading session_key.js:', e.message);
+            }
+        }
+
+        if (sessionID && sessionID.trim() !== '') {
+            try {
+                console.log('[AUTH] Importing session from Session Key...');
+                // Clean the ID (remove prefixes like 'EDBOTS!')
+                const cleanID = sessionID.includes('!') ? sessionID.split('!')[1] : sessionID;
+                const decoded = Buffer.from(cleanID, 'base64').toString('utf8');
+                
+                // Validate JSON and write creds.json
+                JSON.parse(decoded); 
+                fs.writeFileSync(credsPath, decoded, 'utf8');
+                console.log('[AUTH] ✓ Session imported successfully to creds.json');
+            } catch (err) {
+                console.error('[AUTH] ✗ Failed to decode Session Key:', err.message);
+            }
+        }
+    }
+    // ----------------------------
+
+    const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+
+    console.log(`[SYSTEM] Starting Bot with Baileys v${version.join('.')} (Latest: ${isLatest})`);
+
+    const sock = makeWASocket({
+        version,
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false, // Explicitly disabled as per user instruction
+        browser: Browsers.ubuntu('Chrome'),
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
+        },
+    });
+
+    // Initialize Anti-Call
+    initializeAntiCall(sock);
+
+    // Support for Phone Number Pairing
+    if (!sock.authState.creds.registered) {
+        // Use the first owner number from config for pairing if available, 
+        // otherwise let the user know they need to configure it.
+        const phoneNumber = config.owner?.[0]?.replace(/[^0-9]/g, '');
+        
+        if (phoneNumber) {
+            console.log(`[AUTH] Generating pairing code for: ${phoneNumber}`);
+            setTimeout(async () => {
+                try {
+                    const code = await sock.requestPairingCode(phoneNumber);
+                    console.log(`\n╔══════════════════════════════════════════════════════════════╗`);
+                    console.log(`║  PAIRING CODE: ${code.match(/.{1,4}/g).join('-')}                          ║`);
+                    console.log(`╚══════════════════════════════════════════════════════════════╝\n`);
+                } catch (error) {
+                    console.error('[AUTH] Failed to request pairing code:', error.message);
+                }
+            }, 3000);
+        } else {
+            console.warn('[AUTH] No owner phone number found in config.js for pairing.');
+            console.warn('[AUTH] Please add your number to the owner array in config.js');
+        }
+    }
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
+
+        if (connection === 'open') {
+            console.log(`\n╔══════════════════════════════════════════════════════════════╗`);
+            console.log(`║  ✅ BOT CONNECTED SUCCESSFULLY                               ║`);
+            console.log(`║  User: ${sock.user?.id.split(':')[0]}                                     ║`);
+            console.log(`╚══════════════════════════════════════════════════════════════╝\n`);
+        }
+
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error instanceof Boom) 
+                ? lastDisconnect.error.output?.statusCode !== DisconnectReason.loggedOut 
+                : true;
+
+            console.log('[SYSTEM] Connection closed. Reason:', lastDisconnect?.error?.message || 'Unknown');
+            
+            if (shouldReconnect) {
+                console.log('[SYSTEM] Reconnecting...');
+                startBot();
+            } else {
+                console.log('[SYSTEM] Logged out. Please clear the session folder and restart.');
+                process.exit(0);
+            }
+        }
+    });
+
+    // Handle incoming messages
+    sock.ev.on('messages.upsert', async (m) => {
+        if (m.messages?.[0]) {
+            await handleMessage(sock, m.messages[0]);
+        }
+    });
+
+    // Handle group updates
+    sock.ev.on('group-participants.update', async (update) => {
+        await handleGroupUpdate(sock, update);
+    });
+
+    return sock;
 }
 
-/**
- * Loads environment variables from a .env file for local development.
- * This is wrapped in a try/catch to make it optional.
- */
-function setupEnvironment() {
-    try {
-        require('dotenv').config();
-        console.log('[SYSTEM] Loaded environment variables from .env file.');
-    } catch (e) {
-        console.log('[SYSTEM] .env file not found or dotenv package not installed. Proceeding with system environment variables.');
-    }
-}
+// Global error handling to prevent crashes
+process.on('uncaughtException', (err) => {
+    console.error('[CRITICAL] Uncaught Exception:', err);
+});
 
-/**
- * The main function that starts the application.
- */
-async function main() {
-    console.log('=================================================');
-    console.log('            🚀 STARTING EDBOT V3 🚀             ');
-    console.log('=================================================');
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
-    // 1. Ensure documentation and environment are set up.
-    ensureEnvExampleExists();
-    setupEnvironment();
-
-    // 2. Defer to the session utility to handle all core logic.
-    try {
-        await initializeBot();
-        console.log('[SYSTEM] ✅ Bot initialization process completed.');
-    } catch (error) {
-        console.error('❌ FATAL ERROR DURING BOT INITIALIZATION ❌');
-        console.error(error);
-        process.exit(1); // Exit with an error code.
-    }
-}
-
-// Run the main function.
-main();
+startBot();

@@ -16,7 +16,6 @@ lerna-debug.log*
 
 # Session and Database files
 session/*
-!session/session_key.js
 database/
 *.db
 

@@ -11,7 +11,6 @@ module.exports = {
     botName: 'EDBOTS',
     prefix: '.',
     sessionName: 'session', // Folder name for session data
-    // sessionID removed - now managed in session/session_key.js
     newsletterJid: '120363407258579577@newsletter',
     updateZipUrl: 'https://github.com/edunoluwadarasimidavid/EDBOTS/archive/refs/heads/main.zip',
     
