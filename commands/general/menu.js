@@ -4,7 +4,7 @@
 
 const config = require('../../config');
 const { loadCommands } = require('../../utils/commandLoader');
-const versionData = require('../../version.json');
+const versionData = require('../../bot_version.json');
 
 module.exports = {
   name: 'menu',
