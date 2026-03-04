@@ -128,7 +128,16 @@ async function moveFilesRecursive(src, dest) {
             const destPath = path.join(dest, file);
 
             // PROTECTED PATHS/FILES TO SKIP
-            if (file === 'node_modules' || file === 'session' || file === '.git' || file === '.env') {
+            if (
+                file === 'node_modules' || 
+                file === 'session' || 
+                file === 'database' ||
+                file === '.git' || 
+                file === '.env' || 
+                file === 'index.js' || 
+                file === 'handler.js' || 
+                file === 'config.js'
+            ) {
                 console.log(`[Updater] Skipping protected path: ${file}`);
                 continue;
             }
