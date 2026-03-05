@@ -68,7 +68,7 @@ const restoreConnection = () => {
 /**
  * Starts an authentication session and returns the public URL and a promise for the token
  */
-async function startAuthSession() {
+async function startAuthSession(options = {}) {
     return new Promise((resolveSession, rejectSession) => {
         const server = http.createServer();
         
@@ -77,13 +77,15 @@ async function startAuthSession() {
             
             try {
                 // Initialize localtunnel to expose the local server
-                tunnel = await localtunnel({ port });
+                tunnel = await localtunnel({ 
+                    port,
+                    subdomain: options.subdomain || undefined
+                });
                 const publicUrl = tunnel.url;
                 
                 console.log(`[PuterAI] Tunnel created: ${publicUrl}`);
                 
                 // Puter's redirectURL typically expects a URL that the browser can reach.
-                // Since we have a public tunnel URL, we use it.
                 const authUrl = `https://puter.com/?action=authme&redirectURL=${encodeURIComponent(publicUrl)}`;
                 
                 const tokenPromise = new Promise((resolveToken) => {
@@ -110,7 +112,6 @@ async function startAuthSession() {
                             resolveToken(token);
                         }
                         
-                        // Close tunnel and server after a short delay to ensure response is sent
                         setTimeout(() => {
                             server.close();
                             if (tunnel) {
@@ -121,7 +122,7 @@ async function startAuthSession() {
                     });
                 });
 
-                resolveSession({ url: authUrl, tokenPromise });
+                resolveSession({ url: authUrl, tokenPromise, publicUrl });
             } catch (err) {
                 console.error('[PuterAI] Localtunnel error:', err);
                 server.close();
