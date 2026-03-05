@@ -6,7 +6,7 @@
 const config = require('../../config');
 const fs = require('fs');
 const path = require('path');
-const { authenticate, clearConnection } = require('../../utils/puterAI');
+const { startAuthSession, clearConnection } = require('../../utils/puterAI');
 
 module.exports = {
   name: 'auto-reply',
@@ -35,14 +35,26 @@ module.exports = {
           return extra.reply('✅ AI Auto Reply is already *ON*.');
         }
 
-        await extra.reply('🔑 Authenticating with Puter.js... Check your server terminal/browser if needed.');
+        const authSession = await startAuthSession();
+        
+        await extra.reply(
+          `🔐 *AI Auto Reply Setup*\n\n` +
+          `To enable AI auto reply, authenticate with Puter.\n\n` +
+          `Open this link in your browser and log in:\n\n` +
+          `${authSession.url}\n\n` +
+          `After logging in, the bot will automatically detect the connection and enable AI replies.`
+        );
 
         try {
-          await authenticate();
+          // Wait for the token
+          await authSession.tokenPromise;
+          
           updateConfig('autoReply', true);
           config.autoReply = true;
+          
           return extra.reply(
-            `🌐 Your Puter AI account is now connected.\n` +
+            `✅ *Connection successful!*\n\n` +
+            `Your Puter AI account is now connected.\n` +
             `AI Auto Reply has been enabled.`
           );
         } catch (authError) {
@@ -59,7 +71,7 @@ module.exports = {
         clearConnection();
         updateConfig('autoReply', false);
         config.autoReply = false;
-        return extra.reply('❌ AI Auto Reply has been disabled and connection removed.');
+        return extra.reply('❌ AI Auto Reply has been disabled.');
       }
       
       return extra.reply('❌ Invalid argument!\nUsage: .auto-reply <on/off>');

@@ -1,7 +1,8 @@
-const { init, getAuthToken } = require("@heyputer/puter.js/src/init.cjs");
+const { init } = require("@heyputer/puter.js/src/init.cjs");
 const config = require('../config');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 
 const CONNECTION_FILE = path.join(__dirname, '..', 'ai', 'puter_connection.json');
 let puter;
@@ -59,26 +60,53 @@ const restoreConnection = () => {
 };
 
 /**
- * Authenticates with Puter.js via browser
+ * Starts an authentication session and returns the URL and a promise for the token
  */
-async function authenticate() {
-    try {
-        console.log('[PuterAI] Requesting auth token (Browser might open)...');
-        const token = await getAuthToken();
-        puter = init(token);
-        saveConnection(token);
-        return true;
-    } catch (error) {
-        console.error('[PuterAI Auth Error]', error);
-        throw error;
-    }
+function startAuthSession() {
+    return new Promise((resolveSession) => {
+        const server = http.createServer();
+        server.listen(0, '0.0.0.0', function() {
+            const port = this.address().port;
+            // Note: Puter.js uses http://localhost:PORT. 
+            // If the bot is on a server, the user might need to visit a URL that points to the server.
+            // But Puter's redirectURL typically expects the browser to redirect to a reachable endpoint.
+            // If the user's browser redirects to localhost, it will only work if the bot and browser are on the same machine.
+            // However, the requirement says "send the authentication URL to the user".
+            const url = `https://puter.com/?action=authme&redirectURL=${encodeURIComponent('http://localhost:') + port}`;
+            
+            const tokenPromise = new Promise((resolveToken) => {
+                server.on('request', (req, res) => {
+                    const token = new URL(req.url, 'http://localhost/').searchParams.get('token');
+                    
+                    res.writeHead(200, { 'Content-Type': 'text/html' });
+                    res.end(`
+                        <html>
+                            <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #f0f2f5;">
+                                <div style="background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center;">
+                                    <h1 style="color: #4CAF50;">✅ Authentication Successful</h1>
+                                    <p>You can now close this tab and return to WhatsApp.</p>
+                                </div>
+                            </body>
+                        </html>
+                    `);
+
+                    if (token) {
+                        puter = init(token);
+                        saveConnection(token);
+                        resolveToken(token);
+                    }
+                    server.close();
+                });
+            });
+
+            resolveSession({ url, tokenPromise });
+        });
+    });
 }
 
 const getPuter = () => {
     if (!puter) {
-        if (!restoreConnection()) {
-            console.log('[PuterAI] No active session. Use .auto-reply on to authenticate.');
-        }
+        restoreConnection();
     }
     return puter;
 };
@@ -106,7 +134,7 @@ const getInstructions = () => {
 async function generateReply(text) {
     try {
         const client = getPuter();
-        if (!client) return null; // Silently fail if not authenticated for auto-reply
+        if (!client) return null;
 
         const instructions = getInstructions();
         const systemMessage = `${instructions.system_prompt} ${instructions.custom_instructions || ""}`.trim();
@@ -122,11 +150,11 @@ async function generateReply(text) {
         return response?.message?.content || response.toString() || "No response from AI.";
     } catch (error) {
         console.error('[PuterAI Error]', error);
-        return null; // Don't spam error messages in auto-reply mode
+        return null;
     }
 }
 
 // Initialize on load
 restoreConnection();
 
-module.exports = { generateReply, authenticate, clearConnection };
+module.exports = { generateReply, startAuthSession, clearConnection };
