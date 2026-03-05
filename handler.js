@@ -192,6 +192,25 @@ const handleGroupProtections = async (sock, msg, content, groupMetadata, context
   }
 };
 
+// --- AI Auto Reply ---
+const handleAutoReply = async (sock, msg, context) => {
+  try {
+    if (config.autoReply && !msg.key.fromMe && context.body && !context.body.startsWith(config.prefix)) {
+      const { generateReply } = require('./utils/puterAI');
+      if (config.autoTyping) await sock.sendPresenceUpdate('composing', context.from);
+      const aiResponse = await generateReply(context.body);
+      
+      if (aiResponse) {
+        await context.reply(aiResponse);
+        return true;
+      }
+    }
+  } catch (e) {
+    console.error('[AutoReply Error]', e.message);
+  }
+  return false;
+};
+
 // --- Main Message Handler ---
 const handleMessage = async (sock, msg) => {
   try {
@@ -222,6 +241,7 @@ const handleMessage = async (sock, msg) => {
 
     if (await handleAutoSticker(sock, msg, content, commands, commandContext)) return;
     if (await handleGroupProtections(sock, msg, content, groupMetadata, commandContext)) return;
+    if (await handleAutoReply(sock, msg, commandContext)) return;
 
     if (isGroup) addMessage(from, sender);
 

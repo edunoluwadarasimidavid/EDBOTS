@@ -22,6 +22,7 @@
     "@bochilteam/scraper": "^5.0.1",
     "@bochilteam/scraper-facebook": "^5.0.0",
     "@bochilteam/scraper-tiktok": "^5.0.0",
+    "@heyputer/puter.js": "^2.2.10",
     "@vitalets/google-translate-api": "^9.2.1",
     "@whiskeysockets/baileys": "^v7.0.0-rc.9",
     "adm-zip": "^0.5.16",

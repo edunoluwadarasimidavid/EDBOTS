@@ -26,6 +26,8 @@ module.exports = {
     autoReact: false,
     autoReactMode: 'bot',
     autoDownload: false,
+    autoReply: false,
+    puterToken: '',
     
     // Group Settings Defaults
     defaultGroupSettings: {

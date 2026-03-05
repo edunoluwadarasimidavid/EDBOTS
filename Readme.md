@@ -43,6 +43,8 @@ This project is open-source and production-structured.
 | Feature | Status | Description |
 |----------|--------|------------|
 | 🔐 Multi-Device Login | ✅ Working | Compatible with latest WhatsApp MD |
+| 🤖 Puter.js AI | ✅ Added | Free AI models (GPT-4o-mini, etc.) |
+| 💬 AI Auto-Reply | ✅ Added | Toggleable AI for all messages |
 | 🌐 Web Pairing | ✅ Live | Pair via website (no terminal QR needed) |
 | 🧩 Modular Commands | ✅ Working | Add commands inside `/commands` |
 | 👑 Owner System | ✅ Working | Restricted admin commands |
@@ -50,6 +52,34 @@ This project is open-source and production-structured.
 | ⚡ Lightweight Core | ✅ Optimized | Efficient memory handling |
 | 🔄 Auto Reconnect | ✅ Enabled | Handles disconnect events |
 | 🎨 Config Customization | ✅ Editable | Customize via `config.js` |
+
+---
+
+# 🤖 AI Integration (Puter.js)
+
+EDBOTS now features integrated AI using **Puter.js**, providing free access to powerful models like GPT-4o-mini without needing manual API keys.
+
+### 🚀 AI Commands
+
+| Command | Usage | Description |
+|---------|-------|-------------|
+| `.auto-reply on` | Owner | Connects Puter account and enables AI auto-reply |
+| `.auto-reply off` | Owner | Disables AI and removes stored session |
+
+### ⚙ AI Customization
+
+You can customize the AI's personality and model by editing:
+`ai/instructions.json`
+
+```json
+{
+  "system_prompt": "You are EDBOTS AI assistant...",
+  "custom_instructions": "Add your specific rules here",
+  "model": "gpt-4o-mini"
+}
+```
+
+Authentication is handled via a secure browser-based flow on first activation, and the session is stored locally for automatic restoration.
 
 ---
 
