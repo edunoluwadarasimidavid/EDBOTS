@@ -3,9 +3,11 @@ const config = require('../config');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const localtunnel = require('localtunnel');
 
 const CONNECTION_FILE = path.join(__dirname, '..', 'ai', 'puter_connection.json');
 let puter;
+let tunnel;
 
 /**
  * Ensures the 'ai' directory exists
@@ -38,6 +40,10 @@ const clearConnection = () => {
         fs.unlinkSync(CONNECTION_FILE);
     }
     puter = null;
+    if (tunnel) {
+        tunnel.close();
+        tunnel = null;
+    }
 };
 
 /**
@@ -60,46 +66,67 @@ const restoreConnection = () => {
 };
 
 /**
- * Starts an authentication session and returns the URL and a promise for the token
+ * Starts an authentication session and returns the public URL and a promise for the token
  */
-function startAuthSession() {
-    return new Promise((resolveSession) => {
+async function startAuthSession() {
+    return new Promise((resolveSession, rejectSession) => {
         const server = http.createServer();
-        server.listen(0, '0.0.0.0', function() {
+        
+        server.listen(0, '0.0.0.0', async function() {
             const port = this.address().port;
-            // Note: Puter.js uses http://localhost:PORT. 
-            // If the bot is on a server, the user might need to visit a URL that points to the server.
-            // But Puter's redirectURL typically expects the browser to redirect to a reachable endpoint.
-            // If the user's browser redirects to localhost, it will only work if the bot and browser are on the same machine.
-            // However, the requirement says "send the authentication URL to the user".
-            const url = `https://puter.com/?action=authme&redirectURL=${encodeURIComponent('http://localhost:') + port}`;
             
-            const tokenPromise = new Promise((resolveToken) => {
-                server.on('request', (req, res) => {
-                    const token = new URL(req.url, 'http://localhost/').searchParams.get('token');
-                    
-                    res.writeHead(200, { 'Content-Type': 'text/html' });
-                    res.end(`
-                        <html>
-                            <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #f0f2f5;">
-                                <div style="background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center;">
-                                    <h1 style="color: #4CAF50;">✅ Authentication Successful</h1>
-                                    <p>You can now close this tab and return to WhatsApp.</p>
-                                </div>
-                            </body>
-                        </html>
-                    `);
+            try {
+                // Initialize localtunnel to expose the local server
+                tunnel = await localtunnel({ port });
+                const publicUrl = tunnel.url;
+                
+                console.log(`[PuterAI] Tunnel created: ${publicUrl}`);
+                
+                // Puter's redirectURL typically expects a URL that the browser can reach.
+                // Since we have a public tunnel URL, we use it.
+                const authUrl = `https://puter.com/?action=authme&redirectURL=${encodeURIComponent(publicUrl)}`;
+                
+                const tokenPromise = new Promise((resolveToken) => {
+                    server.on('request', (req, res) => {
+                        const urlObj = new URL(req.url, publicUrl);
+                        const token = urlObj.searchParams.get('token');
+                        
+                        res.writeHead(200, { 'Content-Type': 'text/html' });
+                        res.end(`
+                            <html>
+                                <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f2027; color: white;">
+                                    <div style="background: #203a43; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); text-align: center;">
+                                        <h1 style="color: #00F5FF;">✅ Authentication Successful</h1>
+                                        <p>EDBOTS AI is now linked to your account.</p>
+                                        <p style="opacity: 0.7;">You can now close this tab and return to WhatsApp.</p>
+                                    </div>
+                                </body>
+                            </html>
+                        `);
 
-                    if (token) {
-                        puter = init(token);
-                        saveConnection(token);
-                        resolveToken(token);
-                    }
-                    server.close();
+                        if (token) {
+                            puter = init(token);
+                            saveConnection(token);
+                            resolveToken(token);
+                        }
+                        
+                        // Close tunnel and server after a short delay to ensure response is sent
+                        setTimeout(() => {
+                            server.close();
+                            if (tunnel) {
+                                tunnel.close();
+                                tunnel = null;
+                            }
+                        }, 2000);
+                    });
                 });
-            });
 
-            resolveSession({ url, tokenPromise });
+                resolveSession({ url: authUrl, tokenPromise });
+            } catch (err) {
+                console.error('[PuterAI] Localtunnel error:', err);
+                server.close();
+                rejectSession(err);
+            }
         });
     });
 }

@@ -1,6 +1,6 @@
 /**
  * Auto-reply Toggle Command
- * Enable or disable AI auto-reply
+ * Enable or disable AI auto-reply with Localtunnel support
  */
 
 const config = require('../../config');
@@ -11,7 +11,7 @@ const { startAuthSession, clearConnection } = require('../../utils/puterAI');
 module.exports = {
   name: 'auto-reply',
   aliases: ['autoreply', 'ai-auto'],
-  description: 'Enable/disable AI auto-reply for all messages',
+  description: 'Enable/disable AI auto-reply with a public authentication link',
   usage: '.auto-reply <on/off>',
   category: 'owner',
   ownerOnly: true,
@@ -23,7 +23,7 @@ module.exports = {
           `🤖 *AI Auto Reply*\n\n` +
           `Status: *${config.autoReply ? 'ON' : 'OFF'}*\n\n` +
           `Usage:\n` +
-          `  .auto-reply on - Enable auto-reply (Authenticates Puter AI)\n` +
+          `  .auto-reply on - Enable auto-reply (Generates public link)\n` +
           `  .auto-reply off - Disable auto-reply (Removes connection)`
         );
       }
@@ -35,18 +35,26 @@ module.exports = {
           return extra.reply('✅ AI Auto Reply is already *ON*.');
         }
 
-        const authSession = await startAuthSession();
-        
+        // Send initial setup message
         await extra.reply(
-          `🔐 *AI Auto Reply Setup*\n\n` +
-          `To enable AI auto reply, authenticate with Puter.\n\n` +
-          `Open this link in your browser and log in:\n\n` +
-          `${authSession.url}\n\n` +
-          `After logging in, the bot will automatically detect the connection and enable AI replies.`
+          `⏳ Establishing AI neural link...\n` +
+          `Connect to intelligence servers...\n` +
+          `Please wait while I generate a public authentication URL...`
         );
 
         try {
-          // Wait for the token
+          // Generate public auth session via LocalTunnel
+          const authSession = await startAuthSession();
+          
+          await extra.reply(
+            `🔐 *AI Auto Reply Setup*\n\n` +
+            `To enable AI auto-reply, please authenticate with Puter via this public link:\n\n` +
+            `${authSession.url}\n\n` +
+            `⚠️ Please log in using the link above.\n\n` +
+            `The bot will automatically detect the connection once you've finished logging in.`
+          );
+
+          // Wait for the token from the public link
           await authSession.tokenPromise;
           
           updateConfig('autoReply', true);
@@ -54,12 +62,12 @@ module.exports = {
           
           return extra.reply(
             `✅ *Connection successful!*\n\n` +
-            `Your Puter AI account is now connected.\n` +
+            `Your Puter AI account is now linked.\n` +
             `AI Auto Reply has been enabled.`
           );
         } catch (authError) {
           console.error('[AutoReply Auth Failure]', authError);
-          return extra.reply(`❌ Authentication failed: ${authError.message}`);
+          return extra.reply(`❌ Authentication failed: Could not establish a public link. Please check the server logs.`);
         }
       }
       
