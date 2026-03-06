@@ -45,6 +45,9 @@ This project is open-source and production-structured.
 | 🔐 Multi-Device Login | ✅ Working | Compatible with latest WhatsApp MD |
 | 🤖 Puter.js AI | ✅ Added | Free AI models (GPT-4o-mini, etc.) |
 | 💬 AI Auto-Reply | ✅ Added | Toggleable AI for all messages |
+| 👥 Group AI | ✅ New | Respond to `.edbot-ai` only |
+| 📩 Private AI | ✅ New | Greeting detection & `ai:` shortcut |
+| 🔑 Keyword Replies | ✅ New | Configurable auto-replies in `data/` |
 | 🌐 Web Pairing | ✅ Live | Pair via website (no terminal QR needed) |
 | 🧩 Modular Commands | ✅ Working | Add commands inside `/commands` |
 | 👑 Owner System | ✅ Working | Restricted admin commands |
@@ -57,46 +60,35 @@ This project is open-source and production-structured.
 
 # 🤖 AI Integration (Puter.js)
 
-EDBOTS now features integrated AI using **Puter.js**, providing free access to powerful models like GPT-4o-mini without needing manual API keys.
+EDBOTS features integrated AI using **Puter.js**, providing free access to powerful models like GPT-4o-mini without needing manual API keys.
 
 ### 🚀 AI Commands
 
 | Command | Usage | Description |
 |---------|-------|-------------|
-| `.auto-reply on` | Owner | Connects Puter account and enables AI auto-reply |
+| `.edbot-ai <q>` | Group | Asks AI a question in a group |
+| `ai: <question>` | Private | Quick AI shortcut in private chat |
+| `.auto-reply on` | Owner | Enables global AI auto-reply |
 | `.auto-reply off` | Owner | Disables AI and removes stored session |
+
+### 🧠 Intelligent Routing
+
+- **Groups:** The AI only triggers when specifically called using `.edbot-ai`. Normal messages are ignored.
+- **Private Chat:** 
+  - Detects greetings ("hi", "hello") and sends a customizable **Owner AI Menu**.
+  - Automatically matches keywords from `data/commandFile.json` (e.g., "price").
+  - Supports direct AI interaction using the `ai:` prefix.
 
 ### ⚙ AI Customization
 
-You can customize the AI's personality and model by editing:
-`ai/instructions.json`
+Customize personality and model in `ai/instructions.json`:
 
 ```json
 {
   "system_prompt": "You are EDBOTS AI assistant...",
-  "custom_instructions": "Add your specific rules here",
   "model": "gpt-4o-mini"
 }
 ```
-
-Authentication is handled via a secure browser-based flow on first activation, and the session is stored locally for automatic restoration.
-
----
-
-# 🔗 Pairing Website (Live)
-
-Pair your WhatsApp using:
-
-👉 https://edbotsserver.onrender.com
-
-Steps:
-
-1. Open the link
-2. Enter your phone number
-3. Receive pairing code
-4. Enter code in WhatsApp → Linked Devices
-
-No QR terminal required.
 
 ---
 
@@ -105,17 +97,17 @@ No QR terminal required.
 ```
 EDBOTS/
 ├── commands/
-│   ├── ping.js
-│   ├── owner.js
-│   └── group.js
-├── session/
+│   ├── group/        # Group-specific commands
+│   ├── ownerAI/      # Private chat AI logic
+│   └── ...           # General commands
+├── data/             # JSON data for menus & keywords
 ├── utils/
+│   ├── aiEngine.js   # Centralized AI interface
+│   └── puterAI.js    # Puter.js connection logic
 ├── config.js
-├── index.js
-└── package.json
+├── handler.js        # Main message router
+└── index.js
 ```
-
-Clean. Maintainable. Scalable.
 
 ---
 
@@ -134,80 +126,19 @@ node index.js
 
 ## 1️⃣ Session String
 
-Add to `config.js`:
-
-```js
-sessionID: 'YOUR_SESSION_STRING'
-```
-
-Or use environment variable:
-
-```
-SESSION_ID=YOUR_SESSION_STRING
-```
+Add to `config.js` or use `SESSION_ID` environment variable.
 
 ---
 
 ## 2️⃣ QR Login (Optional)
 
-Leave:
-
-```js
-sessionID: ''
-```
-
-Then run:
-
-```bash
-node index.js
-```
-
-Scan QR from WhatsApp → Linked Devices.
+Run `node index.js` and scan the QR from WhatsApp → Linked Devices.
 
 ---
 
 # 🚀 Deployment Options
 
-EDBOTS supports:
-
-- Render
-- VPS
-- Docker
-- Railway
-- Any Node.js hosting platform
-
-Recommended Node.js version: **18 or 20**
-
----
-
-# ⚙ Configuration
-
-Edit `config.js`:
-
-```js
-module.exports = {
-  botName: "EDBOTS",
-  ownerNumber: "234XXXXXXXXXX",
-  prefix: ".",
-  sessionID: ""
-}
-```
-
----
-
-# 📢 Official WhatsApp Channel
-
-<a href="https://whatsapp.com/channel/0029Vb7L1ofDDmFQRaKotG0f">
-<img src="https://img.shields.io/badge/Join-WhatsApp%20Channel-25D366?style=for-the-badge&logo=whatsapp&logoColor=white"/>
-</a>
-
----
-
-# 📊 Repository Stats
-
-<img src="https://github-readme-stats.vercel.app/api?username=edunoluwadarasimidavid&show_icons=true&theme=tokyonight&hide_border=true" height="170"/>
-
-<img src="https://github-readme-streak-stats.herokuapp.com/?user=edunoluwadarasimidavid&theme=tokyonight&hide_border=true"/>
+EDBOTS supports VPS, Docker, Railway, Render, and Pterodactyl. The tunnel system is optimized for restricted container environments using Cloudflare Quick Tunnels.
 
 ---
 
@@ -220,28 +151,9 @@ Repository: https://github.com/edunoluwadarasimidavid/EDBOTS.git
 
 ---
 
-# ⚠ Disclaimer
-
-- Not affiliated with WhatsApp Inc.
-- Use responsibly.
-- Avoid spam or abuse.
-- Educational and automation purposes only.
-
----
-
 # 📜 License
 
 MIT License
-
-You may:
-- Modify
-- Rebrand
-- Distribute
-- Extend
-
-In compliance with MIT terms.
-
----
 
 <div align="center">
 
