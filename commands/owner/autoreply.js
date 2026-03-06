@@ -50,8 +50,6 @@ module.exports = {
             `🔐 *AI Auto Reply Setup*\n\n` +
             `To enable AI auto-reply, please authenticate with Puter via this public link:\n\n` +
             `${authSession.url}\n\n` +
-            `🔑 *Tunnel Password:* \`1234567890\`\n` +
-            `(If prompted for a tunnel password, please use the one above)\n\n` +
             `⚠️ Please log in using the link above.\n\n` +
             `The bot will automatically detect the connection once you've finished logging in.`
           );

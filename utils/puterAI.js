@@ -3,11 +3,12 @@ const config = require('../config');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const localtunnel = require('localtunnel');
+const { exec, spawn } = require('child_process');
+const os = require('os');
 
 const CONNECTION_FILE = path.join(__dirname, '..', 'ai', 'puter_connection.json');
 let puter;
-let tunnel;
+let tunnelProcess;
 
 /**
  * Ensures the 'ai' directory exists
@@ -40,9 +41,9 @@ const clearConnection = () => {
         fs.unlinkSync(CONNECTION_FILE);
     }
     puter = null;
-    if (tunnel) {
-        tunnel.close();
-        tunnel = null;
+    if (tunnelProcess) {
+        tunnelProcess.kill();
+        tunnelProcess = null;
     }
 };
 
@@ -66,31 +67,84 @@ const restoreConnection = () => {
 };
 
 /**
+ * Ensures SSH keys exist for localhost.run
+ */
+async function ensureSshKey() {
+    const sshDir = path.join(os.homedir(), '.ssh');
+    const keyPath = path.join(sshDir, 'id_rsa');
+    
+    if (!fs.existsSync(keyPath)) {
+        console.log('[PuterAI] Generating SSH key for tunnel...');
+        if (!fs.existsSync(sshDir)) fs.mkdirSync(sshDir, { recursive: true });
+        
+        return new Promise((resolve) => {
+            exec(`ssh-keygen -t rsa -b 2048 -f "${keyPath}" -N ""`, (error) => {
+                if (error) console.error('[PuterAI] SSH Key Gen Error:', error);
+                resolve();
+            });
+        });
+    }
+}
+
+/**
  * Starts an authentication session and returns the public URL and a promise for the token
  */
 async function startAuthSession(options = {}) {
+    await ensureSshKey();
+    
     return new Promise((resolveSession, rejectSession) => {
         const server = http.createServer();
         
         server.listen(0, '0.0.0.0', async function() {
             const port = this.address().port;
+            console.log(`[PuterAI] Local server listening on port ${port}`);
             
             try {
-                // Initialize localtunnel to expose the local server
-                tunnel = await localtunnel({ 
-                    port,
-                    subdomain: options.subdomain || undefined
+                // Check if ssh is available
+                exec('ssh -V', async (sshErr) => {
+                    if (sshErr) {
+                        server.close();
+                        return rejectSession(new Error('SSH is not installed on this system. Please install openssh.'));
+                    }
+
+                    const ssh = spawn('ssh', [
+                        '-R', `80:localhost:${port}`,
+                        '-o', 'StrictHostKeyChecking=no',
+                        'ssh.localhost.run'
+                    ]);
+
+                    tunnelProcess = ssh;
+                    let publicUrl = null;
+                    let outputBuffer = '';
+
+                    ssh.stdout.on('data', (data) => {
+                        outputBuffer += data.toString();
+                        // Look for https URL in output
+                        const match = outputBuffer.match(/https:\/\/[a-z0-9]+\.lhr\.life/);
+                        if (match && !publicUrl) {
+                            publicUrl = match[0];
+                            console.log(`[PuterAI] Tunnel active: ${publicUrl}`);
+                            
+                            const authUrl = `https://puter.com/?action=authme&redirectURL=${encodeURIComponent(publicUrl)}`;
+                            resolveSession({ url: authUrl, tokenPromise, publicUrl });
+                        }
+                    });
+
+                    ssh.stderr.on('data', (data) => {
+                        const errOutput = data.toString();
+                        if (errOutput.includes('Permission denied')) {
+                            console.error('[PuterAI] SSH Permission denied. Ensure your environment allows SSH keys.');
+                        }
+                    });
                 });
-                const publicUrl = tunnel.url;
-                
-                console.log(`[PuterAI] Tunnel created: ${publicUrl}`);
-                
-                // Puter's redirectURL typically expects a URL that the browser can reach.
-                const authUrl = `https://puter.com/?action=authme&redirectURL=${encodeURIComponent(publicUrl)}`;
-                
+
+                ssh.on('close', (code) => {
+                    console.log(`[PuterAI] Tunnel closed (code ${code})`);
+                });
+
                 const tokenPromise = new Promise((resolveToken) => {
                     server.on('request', (req, res) => {
-                        const urlObj = new URL(req.url, publicUrl);
+                        const urlObj = new URL(req.url, `http://${req.headers.host}`);
                         const token = urlObj.searchParams.get('token');
                         
                         res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -114,17 +168,25 @@ async function startAuthSession(options = {}) {
                         
                         setTimeout(() => {
                             server.close();
-                            if (tunnel) {
-                                tunnel.close();
-                                tunnel = null;
+                            if (tunnelProcess) {
+                                tunnelProcess.kill();
+                                tunnelProcess = null;
                             }
                         }, 2000);
                     });
                 });
 
-                resolveSession({ url: authUrl, tokenPromise, publicUrl });
+                // Timeout if tunnel doesn't start in 30s
+                setTimeout(() => {
+                    if (!publicUrl) {
+                        ssh.kill();
+                        server.close();
+                        rejectSession(new Error('Tunnel setup timed out.'));
+                    }
+                }, 30000);
+
             } catch (err) {
-                console.error('[PuterAI] Localtunnel error:', err);
+                console.error('[PuterAI] Tunnel setup error:', err);
                 server.close();
                 rejectSession(err);
             }
