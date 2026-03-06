@@ -1,17 +1,19 @@
+/**
+ * Puter AI Utility with Cloudflare Tunnel Support
+ * Optimized for restricted container environments (Pterodactyl, Docker, etc.)
+ */
 const { init } = require("@heyputer/puter.js/src/init.cjs");
-const config = require('../config');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { exec, spawn } = require('child_process');
-const os = require('os');
+const { spawn } = require('child_process');
 
 const CONNECTION_FILE = path.join(__dirname, '..', 'ai', 'puter_connection.json');
 let puter;
 let tunnelProcess;
 
 /**
- * Ensures the 'ai' directory exists
+ * Ensures the 'ai' directory exists for storing tokens
  */
 const ensureAiDir = () => {
     const aiDir = path.dirname(CONNECTION_FILE);
@@ -21,7 +23,7 @@ const ensureAiDir = () => {
 };
 
 /**
- * Saves the connection token to a file
+ * Saves the Puter authentication token to a local file
  */
 const saveConnection = (token) => {
     ensureAiDir();
@@ -34,7 +36,7 @@ const saveConnection = (token) => {
 };
 
 /**
- * Removes the saved connection file
+ * Removes the saved connection and kills active tunnels
  */
 const clearConnection = () => {
     if (fs.existsSync(CONNECTION_FILE)) {
@@ -42,13 +44,13 @@ const clearConnection = () => {
     }
     puter = null;
     if (tunnelProcess) {
-        tunnelProcess.kill();
+        tunnelProcess.kill('SIGINT');
         tunnelProcess = null;
     }
 };
 
 /**
- * Attempts to restore connection from file
+ * Attempts to restore Puter connection from saved file
  */
 const restoreConnection = () => {
     if (fs.existsSync(CONNECTION_FILE)) {
@@ -67,126 +69,92 @@ const restoreConnection = () => {
 };
 
 /**
- * Ensures SSH keys exist for localhost.run
- */
-async function ensureSshKey() {
-    const sshDir = path.join(os.homedir(), '.ssh');
-    const keyPath = path.join(sshDir, 'id_rsa');
-    
-    if (!fs.existsSync(keyPath)) {
-        console.log('[PuterAI] Generating SSH key for tunnel...');
-        if (!fs.existsSync(sshDir)) fs.mkdirSync(sshDir, { recursive: true });
-        
-        return new Promise((resolve) => {
-            exec(`ssh-keygen -t rsa -b 2048 -f "${keyPath}" -N ""`, (error) => {
-                if (error) console.error('[PuterAI] SSH Key Gen Error:', error);
-                resolve();
-            });
-        });
-    }
-}
-
-/**
- * Starts an authentication session and returns the public URL and a promise for the token
+ * Starts a public authentication session using Cloudflare Tunnel (TryCloudflare)
+ * Does NOT require SSH, accounts, or root permissions.
  */
 async function startAuthSession(options = {}) {
-    await ensureSshKey();
-    
     return new Promise((resolveSession, rejectSession) => {
+        // Create a local server to receive the Puter token callback
         const server = http.createServer();
         
         server.listen(0, '0.0.0.0', async function() {
             const port = this.address().port;
-            console.log(`[PuterAI] Local server listening on port ${port}`);
+            console.log(`[Tunnel] Local callback server listening on port ${port}`);
             
             try {
-                // Check if ssh is available
-                exec('ssh -V', async (sshErr) => {
-                    if (sshErr) {
-                        server.close();
-                        return rejectSession(new Error('SSH is not installed on this system. Please install openssh.'));
+                console.log('[Tunnel] Initializing Cloudflare Tunnel...');
+                
+                // Spawn Cloudflare Quick Tunnel using npx (portable Node approach)
+                // We use --yes to auto-confirm package installation and skip prompts
+                const tunnel = spawn('npx', [
+                    '--yes', 
+                    'cloudflared', 
+                    'tunnel', 
+                    '--url', `http://localhost:${port}`
+                ], {
+                    shell: true, // Required for npx execution
+                    env: { ...process.env, NPM_CONFIG_YES: 'true' }
+                });
+
+                tunnelProcess = tunnel;
+                let publicUrl = null;
+                let outputBuffer = '';
+
+                // Cloudflare logs its status and URLs to stderr
+                const handleData = (data) => {
+                    const str = data.toString();
+                    outputBuffer += str;
+                    
+                    // Regex to catch the TryCloudflare URL
+                    const match = outputBuffer.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+                    if (match && !publicUrl) {
+                        publicUrl = match[0];
+                        console.log(`[Tunnel] Tunnel started successfully`);
+                        console.log(`[Tunnel] Public URL: ${publicUrl}`);
+                        
+                        const authUrl = `https://puter.com/?action=authme&redirectURL=${encodeURIComponent(publicUrl)}`;
+                        resolveSession({ 
+                            url: authUrl, 
+                            tokenPromise: createTokenPromise(server, publicUrl), 
+                            publicUrl 
+                        });
                     }
+                };
 
-                    const ssh = spawn('ssh', [
-                        '-R', `80:localhost:${port}`,
-                        '-o', 'StrictHostKeyChecking=no',
-                        'ssh.localhost.run'
-                    ]);
+                tunnel.stdout.on('data', handleData);
+                tunnel.stderr.on('data', handleData);
 
-                    tunnelProcess = ssh;
-                    let publicUrl = null;
-                    let outputBuffer = '';
-
-                    ssh.stdout.on('data', (data) => {
-                        outputBuffer += data.toString();
-                        // Look for https URL in output
-                        const match = outputBuffer.match(/https:\/\/[a-z0-9]+\.lhr\.life/);
-                        if (match && !publicUrl) {
-                            publicUrl = match[0];
-                            console.log(`[PuterAI] Tunnel active: ${publicUrl}`);
-                            
-                            const authUrl = `https://puter.com/?action=authme&redirectURL=${encodeURIComponent(publicUrl)}`;
-                            resolveSession({ url: authUrl, tokenPromise, publicUrl });
-                        }
-                    });
-
-                    ssh.stderr.on('data', (data) => {
-                        const errOutput = data.toString();
-                        if (errOutput.includes('Permission denied')) {
-                            console.error('[PuterAI] SSH Permission denied. Ensure your environment allows SSH keys.');
-                        }
-                    });
+                tunnel.on('error', (err) => {
+                    console.error(`[Tunnel] Spawn error: ${err.message}`);
+                    cleanup();
+                    rejectSession(err);
                 });
 
-                ssh.on('close', (code) => {
-                    console.log(`[PuterAI] Tunnel closed (code ${code})`);
+                tunnel.on('close', (code) => {
+                    if (!publicUrl) {
+                        console.error(`[Tunnel] Tunnel exited with code ${code}`);
+                        cleanup();
+                        rejectSession(new Error(`Tunnel exited with code ${code}`));
+                    }
                 });
 
-                const tokenPromise = new Promise((resolveToken) => {
-                    server.on('request', (req, res) => {
-                        const urlObj = new URL(req.url, `http://${req.headers.host}`);
-                        const token = urlObj.searchParams.get('token');
-                        
-                        res.writeHead(200, { 'Content-Type': 'text/html' });
-                        res.end(`
-                            <html>
-                                <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f2027; color: white;">
-                                    <div style="background: #203a43; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); text-align: center;">
-                                        <h1 style="color: #00F5FF;">✅ Authentication Successful</h1>
-                                        <p>EDBOTS AI is now linked to your account.</p>
-                                        <p style="opacity: 0.7;">You can now close this tab and return to WhatsApp.</p>
-                                    </div>
-                                </body>
-                            </html>
-                        `);
+                function cleanup() {
+                    console.log('[Tunnel] Tunnel failed but bot will continue running');
+                    server.close();
+                    if (tunnelProcess) tunnelProcess.kill();
+                }
 
-                        if (token) {
-                            puter = init(token);
-                            saveConnection(token);
-                            resolveToken(token);
-                        }
-                        
-                        setTimeout(() => {
-                            server.close();
-                            if (tunnelProcess) {
-                                tunnelProcess.kill();
-                                tunnelProcess = null;
-                            }
-                        }, 2000);
-                    });
-                });
-
-                // Timeout if tunnel doesn't start in 30s
+                // Timeout after 60s if no URL is generated (Cloudflare can be slow in some containers)
                 setTimeout(() => {
                     if (!publicUrl) {
-                        ssh.kill();
-                        server.close();
-                        rejectSession(new Error('Tunnel setup timed out.'));
+                        console.error('[Tunnel] Setup timed out after 60 seconds');
+                        cleanup();
+                        rejectSession(new Error('Tunnel timeout'));
                     }
-                }, 30000);
+                }, 60000);
 
             } catch (err) {
-                console.error('[PuterAI] Tunnel setup error:', err);
+                console.error('[Tunnel] Setup error:', err);
                 server.close();
                 rejectSession(err);
             }
@@ -194,33 +162,61 @@ async function startAuthSession(options = {}) {
     });
 }
 
+/**
+ * Creates a promise that resolves when the Puter token is received
+ */
+function createTokenPromise(server, publicUrl) {
+    return new Promise((resolveToken) => {
+        server.on('request', (req, res) => {
+            const urlObj = new URL(req.url, publicUrl);
+            const token = urlObj.searchParams.get('token');
+            
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(`
+                <html>
+                    <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f2027; color: white;">
+                        <div style="background: #203a43; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); text-align: center;">
+                            <h1 style="color: #00F5FF;">✅ Authentication Successful</h1>
+                            <p>EDBOTS AI is now linked to your account.</p>
+                            <p style="opacity: 0.7;">You can now close this tab and return to WhatsApp.</p>
+                        </div>
+                    </body>
+                </html>
+            `);
+
+            if (token) {
+                puter = init(token);
+                saveConnection(token);
+                resolveToken(token);
+            }
+            
+            // Close server and tunnel after token is captured
+            setTimeout(() => {
+                server.close();
+                if (tunnelProcess) {
+                    tunnelProcess.kill('SIGINT');
+                    tunnelProcess = null;
+                }
+            }, 2000);
+        });
+    });
+}
+
 const getPuter = () => {
-    if (!puter) {
-        restoreConnection();
-    }
+    if (!puter) restoreConnection();
     return puter;
 };
 
-/**
- * Loads AI instructions from JSON file
- */
 const getInstructions = () => {
     try {
         const instrPath = path.join(__dirname, '..', 'ai', 'instructions.json');
         if (fs.existsSync(instrPath)) {
             return JSON.parse(fs.readFileSync(instrPath, 'utf8'));
         }
-    } catch (e) {
-        console.error('[PuterAI] Failed to load instructions.json:', e.message);
-    }
+    } catch (e) {}
     return { system_prompt: "You are EDBOTS AI assistant.", model: "gpt-4o-mini" };
 };
 
-/**
- * Generate an AI response using Puter.js
- * @param {string} text The user message
- * @returns {Promise<string>} The AI reply
- */
 async function generateReply(text) {
     try {
         const client = getPuter();
@@ -244,7 +240,7 @@ async function generateReply(text) {
     }
 }
 
-// Initialize on load
+// Auto-restore session on startup
 restoreConnection();
 
 module.exports = { generateReply, startAuthSession, clearConnection };
