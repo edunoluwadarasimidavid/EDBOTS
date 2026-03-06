@@ -15,6 +15,10 @@ async function askAI(question) {
         // Calling our previously established Puter AI logic
         const response = await generateReply(question);
         
+        if (response === "NOT_CONNECTED") {
+            return "⚠️ *AI Connection Required*\n\nPlease ask the bot owner to enable AI using:\n*.auto-reply on*";
+        }
+        
         if (!response) {
             return "⚠️ AI service is currently unavailable. Please try again later.";
         }

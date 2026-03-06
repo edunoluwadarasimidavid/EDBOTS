@@ -220,7 +220,9 @@ const getInstructions = () => {
 async function generateReply(text) {
     try {
         const client = getPuter();
-        if (!client) return null;
+        if (!client) {
+            return "NOT_CONNECTED";
+        }
 
         const instructions = getInstructions();
         const systemMessage = `${instructions.system_prompt} ${instructions.custom_instructions || ""}`.trim();
