@@ -128,14 +128,6 @@ const handleMessage = async (sock, msg) => {
     // 1. Group Logic
     if (isGroup) {
       addMessage(from, sender);
-      
-      // Group AI Command: .edbot-ai
-      if (body.startsWith('.edbot-ai')) {
-        const question = body.slice('.edbot-ai'.length).trim();
-        return await groupAiCmd.execute(sock, msg, question);
-      }
-      
-      // Normal group messages are ignored by AI
     } 
     
     // 2. Private Chat Logic
@@ -156,12 +148,26 @@ const handleMessage = async (sock, msg) => {
           const answer = await askAI(question);
           return await sock.sendMessage(from, { text: answer });
       }
+
+      // AI Auto Reply if enabled
+      if (config.autoReply && !msg.key.fromMe && !body.startsWith(config.prefix)) {
+          const answer = await askAI(body);
+          if (answer && answer !== "NOT_CONNECTED") {
+              return await sock.sendMessage(from, { text: answer }, { quoted: msg });
+          }
+      }
     }
 
-    // 3. Standard Prefix Commands (.menu, etc.)
+    // 3. Standard Prefix Commands (.menu, .edbot-ai, etc.)
     if (body.startsWith(config.prefix)) {
       const args = body.slice(config.prefix.length).trim().split(/\s+/);
       const commandName = args.shift().toLowerCase();
+
+      // AI Command: .edbot-ai
+      if (commandName === 'edbot-ai' || commandName === 'ai') {
+        const question = args.join(' ');
+        return await groupAiCmd.execute(sock, msg, question);
+      }
 
       // Special Menu Command
       if (commandName === 'menu') {

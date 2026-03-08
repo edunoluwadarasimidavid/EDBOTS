@@ -45,6 +45,7 @@ This project is open-source and production-structured.
 | 🔐 Multi-Device Login | ✅ Working | Compatible with latest WhatsApp MD |
 | 🤖 Puter.js AI | ✅ Added | Free AI models (GPT-4o-mini, etc.) |
 | 💬 AI Auto-Reply | ✅ Added | Toggleable AI for all messages |
+| 🌐 Cloudflare Tunnel | ✅ Added | Secure auth link via `cloudflared` |
 | 👥 Group AI | ✅ New | Respond to `.edbot-ai` only |
 | 📩 Private AI | ✅ New | Greeting detection & `ai:` shortcut |
 | 🔑 Keyword Replies | ✅ New | Configurable auto-replies in `data/` |
@@ -66,18 +67,28 @@ EDBOTS features integrated AI using **Puter.js**, providing free access to power
 
 | Command | Usage | Description |
 |---------|-------|-------------|
-| `.edbot-ai <q>` | Group | Asks AI a question in a group |
+| `.edbot-ai <q>` | Global | Asks AI a question (Works in Group/Private) |
+| `.ai <question>`| Global | Shorter alias for `.edbot-ai` |
 | `ai: <question>` | Private | Quick AI shortcut in private chat |
-| `.auto-reply on` | Owner | Enables global AI auto-reply |
+| `.auto-reply on` | Owner | Enables global AI auto-reply (Generates Auth Link) |
 | `.auto-reply off` | Owner | Disables AI and removes stored session |
+
+### 🔐 Authentication (Cloudflare Tunnel)
+
+To connect the AI, use `.auto-reply on`. The bot will automatically:
+1. Start a local secure server.
+2. Create a public tunnel using **Cloudflare** (`cloudflared`).
+3. Generate a secure `puter.com` authentication link.
+4. Automatically detect and save your session once you log in.
 
 ### 🧠 Intelligent Routing
 
-- **Groups:** The AI only triggers when specifically called using `.edbot-ai`. Normal messages are ignored.
+- **Groups:** The AI only triggers when specifically called using `.edbot-ai` or `.ai`. Normal messages are ignored to prevent spam.
 - **Private Chat:** 
-  - Detects greetings ("hi", "hello") and sends a customizable **Owner AI Menu**.
-  - Automatically matches keywords from `data/commandFile.json` (e.g., "price").
-  - Supports direct AI interaction using the `ai:` prefix.
+  - **Auto-Reply Mode:** If enabled, the bot answers *every* message using AI (excluding commands).
+  - **Greeting Detection:** Detects "hi", "hello", etc., and sends an interactive menu.
+  - **Keyword Matching:** Prioritizes manual keywords from `data/commandFile.json`.
+  - **Shortcut:** Supports `ai: <question>` even if auto-reply is off.
 
 ### ⚙ AI Customization
 

@@ -50,9 +50,10 @@ const clearConnection = () => {
 };
 
 /**
- * Attempts to restore Puter connection from saved file
+ * Attempts to restore Puter connection from saved file or config
  */
 const restoreConnection = () => {
+    // 1. Try saved connection file
     if (fs.existsSync(CONNECTION_FILE)) {
         try {
             const data = JSON.parse(fs.readFileSync(CONNECTION_FILE, 'utf8'));
@@ -62,15 +63,27 @@ const restoreConnection = () => {
                 return true;
             }
         } catch (e) {
-            console.error('[PuterAI] Failed to restore connection:', e.message);
+            console.error('[PuterAI] Failed to restore connection file:', e.message);
         }
     }
+
+    // 2. Fallback to config.js token
+    try {
+        const config = require('../config');
+        if (config.puterToken) {
+            puter = init(config.puterToken);
+            console.log('[PuterAI] Connection restored from config.js token.');
+            return true;
+        }
+    } catch (e) {
+        // config might not be available yet or other error
+    }
+
     return false;
 };
 
 /**
  * Starts a public authentication session using Cloudflare Tunnel (TryCloudflare)
- * Does NOT require SSH, accounts, or root permissions.
  */
 async function startAuthSession(options = {}) {
     return new Promise((resolveSession, rejectSession) => {
@@ -84,15 +97,14 @@ async function startAuthSession(options = {}) {
             try {
                 console.log('[Tunnel] Initializing Cloudflare Tunnel...');
                 
-                // Spawn Cloudflare Quick Tunnel using npx (portable Node approach)
-                // We use --yes to auto-confirm package installation and skip prompts
+                // Spawn Cloudflare Quick Tunnel using npx
                 const tunnel = spawn('npx', [
                     '--yes', 
                     'cloudflared', 
                     'tunnel', 
                     '--url', `http://localhost:${port}`
                 ], {
-                    shell: true, // Required for npx execution
+                    shell: true,
                     env: { ...process.env, NPM_CONFIG_YES: 'true' }
                 });
 
@@ -100,7 +112,6 @@ async function startAuthSession(options = {}) {
                 let publicUrl = null;
                 let outputBuffer = '';
 
-                // Cloudflare logs its status and URLs to stderr
                 const handleData = (data) => {
                     const str = data.toString();
                     outputBuffer += str;
@@ -139,19 +150,21 @@ async function startAuthSession(options = {}) {
                 });
 
                 function cleanup() {
-                    console.log('[Tunnel] Tunnel failed but bot will continue running');
                     server.close();
-                    if (tunnelProcess) tunnelProcess.kill();
+                    if (tunnelProcess) {
+                        tunnelProcess.kill('SIGINT');
+                        tunnelProcess = null;
+                    }
                 }
 
-                // Timeout after 60s if no URL is generated (Cloudflare can be slow in some containers)
+                // Timeout after 90s (Cloudflare can be slow to download/start in some environments)
                 setTimeout(() => {
                     if (!publicUrl) {
-                        console.error('[Tunnel] Setup timed out after 60 seconds');
+                        console.error('[Tunnel] Setup timed out after 90 seconds');
                         cleanup();
                         rejectSession(new Error('Tunnel timeout'));
                     }
-                }, 60000);
+                }, 90000);
 
             } catch (err) {
                 console.error('[Tunnel] Setup error:', err);
@@ -193,9 +206,9 @@ function createTokenPromise(server, publicUrl) {
             // Close server and tunnel after token is captured
             setTimeout(() => {
                 server.close();
-                if (tunnelProcess) {
-                    tunnelProcess.kill('SIGINT');
-                    tunnelProcess = null;
+                if (tunnel) {
+                    tunnel.close();
+                    tunnel = null;
                 }
             }, 2000);
         });
