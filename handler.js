@@ -29,10 +29,14 @@ const commands = loadCommands();
 const getMessageContent = (msg) => {
   if (!msg || !msg.message) return null;
   let m = msg.message;
+  
+  // Handle various wrapper types
   if (m.ephemeralMessage) m = m.ephemeralMessage.message;
   if (m.viewOnceMessageV2) m = m.viewOnceMessageV2.message;
+  if (m.viewOnceMessageV2Extension) m = m.viewOnceMessageV2Extension.message;
   if (m.viewOnceMessage) m = m.viewOnceMessage.message;
   if (m.documentWithCaptionMessage) m = m.documentWithCaptionMessage.message;
+  
   return m;
 };
 
@@ -115,7 +119,9 @@ const handleMessage = async (sock, msg) => {
 
     let body = content.conversation || content.extendedTextMessage?.text || content.imageMessage?.caption || content.videoMessage?.caption || '';
     body = body.trim();
-    if (!body) return;
+    // body is allowed to be empty if there's a quoted message (e.g. for .viewonce)
+    const isReply = !!(content.extendedTextMessage?.contextInfo?.quotedMessage);
+    if (!body && !isReply) return;
 
     const context = {
       from, sender, isGroup, groupMetadata, body,
@@ -125,68 +131,80 @@ const handleMessage = async (sock, msg) => {
       reply: (text) => sock.sendMessage(from, { text }, { quoted: msg })
     };
 
-    // 1. Group Logic
-    if (isGroup) {
-      addMessage(from, sender);
-    } 
-    
-    // 2. Private Chat Logic
-    else {
-      // Greeting Detection
-      const greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon'];
-      if (greetings.includes(body.toLowerCase())) {
-        return await ownerAiCmd.handleGreeting(sock, msg);
-      }
-
-      // Keyword Auto Replies
-      if (await handleKeywordReplies(sock, from, body)) return;
-
-      // Private AI shortcut: "ai: question"
-      if (body.toLowerCase().startsWith('ai:')) {
-          const question = body.slice(3).trim();
-          await sock.sendMessage(from, { text: "⏳ Thinking..." });
-          const answer = await askAI(question);
-          return await sock.sendMessage(from, { text: answer });
-      }
-
-      // AI Auto Reply if enabled
-      if (config.autoReply && !msg.key.fromMe && !body.startsWith(config.prefix)) {
-          const answer = await askAI(body);
-          if (answer && answer !== "NOT_CONNECTED") {
-              return await sock.sendMessage(from, { text: answer }, { quoted: msg });
+    // --- EXECUTION SCOPE ---
+    // Start of a protected execution block
+    try {
+        // 1. Group Logic
+        if (isGroup) {
+          addMessage(from, sender);
+        } 
+        
+        // 2. Private Chat Logic
+        else {
+          // Greeting Detection
+          const greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon'];
+          if (greetings.includes(body.toLowerCase())) {
+            return await ownerAiCmd.handleGreeting(sock, msg);
           }
-      }
-    }
 
-    // 3. Standard Prefix Commands (.menu, .edbot-ai, etc.)
-    if (body.startsWith(config.prefix)) {
-      const args = body.slice(config.prefix.length).trim().split(/\s+/);
-      const commandName = args.shift().toLowerCase();
+          // Keyword Auto Replies
+          if (await handleKeywordReplies(sock, from, body)) return;
 
-      // AI Command: .edbot-ai
-      if (commandName === 'edbot-ai' || commandName === 'ai') {
-        const question = args.join(' ');
-        return await groupAiCmd.execute(sock, msg, question);
-      }
+          // Private AI shortcut: "ai: question"
+          if (body.toLowerCase().startsWith('ai:')) {
+              const question = body.slice(3).trim();
+              await sock.sendMessage(from, { text: "⏳ Thinking..." });
+              const answer = await askAI(question);
+              return await sock.sendMessage(from, { text: answer });
+          }
 
-      // Special Menu Command
-      if (commandName === 'menu') {
-        return await menuCmd.execute(sock, msg);
-      }
+          // AI Auto Reply if enabled
+          if (config.autoReply && !msg.key.fromMe && !body.startsWith(config.prefix)) {
+              const answer = await askAI(body);
+              if (answer && answer !== "NOT_CONNECTED") {
+                  return await sock.sendMessage(from, { text: answer }, { quoted: msg });
+              }
+          }
+        }
 
-      const command = commands.get(commandName);
-      if (command) {
-        // Permission checks
-        if (command.ownerOnly && !context.isOwner) return context.reply(config.messages.ownerOnly);
-        if (command.groupOnly && !context.isGroup) return context.reply(config.messages.groupOnly);
-        if (command.adminOnly && !context.isAdmin && !context.isOwner) return context.reply(config.messages.adminOnly);
+        // 3. Standard Prefix Commands (.menu, .edbot-ai, etc.)
+        if (body.startsWith(config.prefix)) {
+          const args = body.slice(config.prefix.length).trim().split(/\s+/);
+          const commandName = args.shift().toLowerCase();
 
-        await command.execute(sock, msg, args, context);
-      }
+          // AI Command: .edbot-ai
+          if (commandName === 'edbot-ai' || commandName === 'ai') {
+            const question = args.join(' ');
+            return await groupAiCmd.execute(sock, msg, question);
+          }
+
+          // Special Menu Command
+          if (commandName === 'menu') {
+            return await menuCmd.execute(sock, msg);
+          }
+
+          const command = commands.get(commandName);
+          if (command) {
+            // Permission checks
+            if (command.ownerOnly && !context.isOwner) return context.reply(config.messages.ownerOnly);
+            if (command.groupOnly && !context.isGroup) return context.reply(config.messages.groupOnly);
+            if (command.adminOnly && !context.isAdmin && !context.isOwner) return context.reply(config.messages.adminOnly);
+
+            // Execute command with individual try-catch to keep bot alive
+            try {
+                await command.execute(sock, msg, args, context);
+            } catch (cmdError) {
+                console.error(` [COMMAND ERROR] .${commandName}:`, cmdError);
+                context.reply('❌ An internal error occurred while executing this command.');
+            }
+          }
+        }
+    } catch (innerError) {
+        console.error(' [INTERNAL ERROR] Message processing logic failed:', innerError);
     }
 
   } catch (e) {
-    console.error('[MessageHandler Error]', e);
+    console.error(' [CRASH PREVENTION] Fatal handleMessage error:', e);
   }
 };
 

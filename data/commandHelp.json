@@ -1,0 +1,50 @@
+{
+  "kick": {
+    "description": "Removes a member from the group.",
+    "usage": ".kick @user",
+    "permission": "Group Admin / Owner",
+    "example": ".kick @123456789"
+  },
+  "promote": {
+    "description": "Makes a member a group administrator.",
+    "usage": ".promote @user",
+    "permission": "Group Admin / Owner",
+    "example": ".promote @123456789"
+  },
+  "edbot-ai": {
+    "description": "Asks the AI assistant a question using Puter.js (GPT-4o).",
+    "usage": ".edbot-ai <question>",
+    "permission": "Everyone",
+    "example": ".edbot-ai how to learn node.js"
+  },
+  "auto-reply": {
+    "description": "Toggles AI auto-reply for private chats and handles authentication.",
+    "usage": ".auto-reply <on/off>",
+    "permission": "Bot Owner",
+    "example": ".auto-reply on"
+  },
+  "viewonce": {
+    "description": "Reveals and re-sends view-once media messages.",
+    "usage": ".viewonce (reply to media)",
+    "permission": "Everyone",
+    "example": ".viewonce"
+  },
+  "sticker": {
+    "description": "Converts image or video to a WhatsApp sticker.",
+    "usage": ".sticker (caption or reply to media)",
+    "permission": "Everyone",
+    "example": ".sticker"
+  },
+  "weather": {
+    "description": "Checks the current weather for a specific city.",
+    "usage": ".weather <city>",
+    "permission": "Everyone",
+    "example": ".weather Lagos"
+  },
+  "update": {
+    "description": "Automatically increments the bot version and reloads the menu.",
+    "usage": ".update",
+    "permission": "Bot Owner",
+    "example": ".update"
+  }
+}

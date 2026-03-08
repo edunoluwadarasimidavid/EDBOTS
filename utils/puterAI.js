@@ -234,21 +234,30 @@ async function generateReply(text) {
     try {
         const client = getPuter();
         if (!client) {
+            console.log('[PuterAI] No client found, returning NOT_CONNECTED');
             return "NOT_CONNECTED";
         }
 
         const instructions = getInstructions();
         const systemMessage = `${instructions.system_prompt} ${instructions.custom_instructions || ""}`.trim();
+        const model = instructions.model || "gpt-4o";
 
-        const response = await client.ai.chat({
-            model: instructions.model || "gpt-4o-mini",
-            messages: [
-                { role: "system", content: systemMessage },
-                { role: "user", content: text }
-            ]
+        console.log(`[PuterAI] Sending request to model: ${model}`);
+
+        const response = await client.ai.chat(text, {
+            model: model,
+            system_prompt: systemMessage
         });
 
-        return response?.message?.content || response.toString() || "No response from AI.";
+        // Puter.js chat response can be a string or object with toString()
+        const content = response?.message?.content || response?.toString() || "";
+        
+        if (!content || content.trim() === "") {
+            console.error('[PuterAI] Received empty response from AI', response);
+            return null;
+        }
+
+        return content;
     } catch (error) {
         console.error('[PuterAI Error]', error);
         return null;

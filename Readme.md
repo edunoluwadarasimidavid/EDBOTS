@@ -56,12 +56,50 @@ This project is open-source and production-structured.
 | ⚡ Lightweight Core | ✅ Optimized | Efficient memory handling |
 | 🔄 Auto Reconnect | ✅ Enabled | Handles disconnect events |
 | 🎨 Config Customization | ✅ Editable | Customize via `config.js` |
+| 📈 Version Control | ✅ New | Auto-incrementing version system |
+| 📑 Dynamic Menu | ✅ Added | Professional styled dashboard |
+| 👁️ View-Once Unlock | ✅ Fixed | Reveal images/videos/audio |
+| 🛡️ Crash Protection| ✅ Active | Prevents fatal process exits |
+| 🧹 Auto-Cleanup | ✅ Enabled | Automatically clears temp media |
+
+---
+
+# 🚀 Core Feature Updates
+
+### 🛡️ Crash-Safe Architecture
+EDBOTS is built with industrial-grade stability:
+- **Global Error Monitoring:** Captures `uncaughtException` and `unhandledRejection` to keep the bot alive during API or network failures.
+- **Surgical Isolation:** Every command execution is isolated in a `try-catch` block. If one command fails, the bot continues to serve others.
+
+### 🧹 Lightweight Performance
+Designed for low-resource environments (Termux, free-tier VPS):
+- **Automated Temp Management:** Automatically deletes downloaded images, videos, and stickers from the `temp/` folder after 60 seconds.
+- **Efficient Memory Handling:** Minimal background footprint and optimized command loading.
+
+### 📈 Version Control System
+Managed via `config/bot.json`:
+- **Command:** `.update` (Owner only)
+- **Rules:** Automatically increments `Major.Minor.Patch` (e.g., 1.0.9 → 1.1.0).
+- **Persistence:** Reflected instantly in the dashboard.
+
+### 📑 Help & Documentation System
+To keep the menu clean, EDBOTS uses a dedicated documentation system:
+- **Command:** `.help <command_name>`
+- **Output:** Shows full description, usage format, required permissions, and examples.
+- **Data Source:** Managed via `data/commandHelp.json`.
+
+### 📊 Dynamic Dashboard (Menu)
+The new `.menu` command provides a real-time status dashboard with:
+- **User Branding:** Displays the configured bot owner.
+- **Uptime:** Shows live process uptime in `Xh Xm` format.
+- **Live Versioning:** Displays the current version from `bot.json`.
+- **Clean UI:** Grouped categories without overlapping descriptions.
 
 ---
 
 # 🤖 AI Integration (Puter.js)
 
-EDBOTS features integrated AI using **Puter.js**, providing free access to powerful models like GPT-4o-mini without needing manual API keys.
+EDBOTS features integrated AI using **Puter.js**, providing free access to powerful models like **GPT-4o** without needing manual API keys.
 
 ### 🚀 AI Commands
 
