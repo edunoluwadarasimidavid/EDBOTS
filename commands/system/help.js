@@ -10,8 +10,7 @@ module.exports = {
     async execute(sock, msg, args, extra) {
         try {
             if (!args[0]) {
-                return await sock.sendMessage(msg.key.remoteJid, { text: "❓ Usage: *.help <command_name>*
-Example: *.help kick*" }, { quoted: msg });
+                return await extra.reply("❓ Usage: *.help <command_name>*\nExample: *.help kick*");
             }
 
             const commandName = args[0].toLowerCase().replace('.', '');
@@ -20,7 +19,7 @@ Example: *.help kick*" }, { quoted: msg });
             const cmd = helpData[commandName];
 
             if (!cmd) {
-                return await sock.sendMessage(msg.key.remoteJid, { text: `❌ Help for command *${commandName}* not found.` }, { quoted: msg });
+                return await extra.reply(`❌ Documentation for command *${commandName}* not found.`);
             }
 
             const helpText = `╭─≪ *COMMAND HELP* ≫─╮
@@ -41,7 +40,7 @@ Example: *.help kick*" }, { quoted: msg });
 
             await sock.sendMessage(msg.key.remoteJid, { text: helpText }, { quoted: msg });
         } catch (error) {
-            console.error('Help command error:', error);
+            console.error('[Help Error]', error);
         }
     }
 };

@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { handleMessage, handleGroupUpdate, initializeAntiCall } = require('./handler');
+const { checkRestartFlag } = require('./utils/restartManager');
 
 async function startBot() {
     const sessionDir = './session';
@@ -108,6 +109,9 @@ async function startBot() {
             console.log(`║  ✅ BOT CONNECTED SUCCESSFULLY                               ║`);
             console.log(`║  User: ${sock.user?.id.split(':')[0]}                                     ║`);
             console.log(`╚══════════════════════════════════════════════════════════════╝\n`);
+            
+            // Check if we just restarted from an update
+            await checkRestartFlag(sock);
         }
 
         if (connection === 'close') {

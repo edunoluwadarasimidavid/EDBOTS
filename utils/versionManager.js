@@ -1,26 +1,32 @@
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
+
 /**
- * Increments version number following semantic rules:
- * 1.0.6 -> 1.0.7
- * 1.0.9 -> 1.1.0
- * 1.9.9 -> 2.0.0
+ * Fetches the latest git tag from the repository.
  */
-function incrementVersion(version) {
-    let parts = version.split('.').map(Number);
-    if (parts.length !== 3) return "1.0.0";
-    
-    parts[2]++; // Increment patch
-    
-    if (parts[2] > 9) {
-        parts[2] = 0;
-        parts[1]++; // Increment minor
+async function getLatestTag() {
+    try {
+        await execPromise('git fetch --tags');
+        const { stdout } = await execPromise('git describe --tags $(git rev-list --tags --max-count=1)');
+        return stdout.trim();
+    } catch (error) {
+        console.error('[VersionManager] Git Error:', error.message);
+        return null;
     }
-    
-    if (parts[1] > 9) {
-        parts[1] = 0;
-        parts[0]++; // Increment major
-    }
-    
-    return parts.join('.');
 }
 
-module.exports = { incrementVersion };
+/**
+ * Checks out a specific git tag.
+ */
+async function checkoutTag(tag) {
+    try {
+        await execPromise(`git checkout ${tag}`);
+        return true;
+    } catch (error) {
+        console.error(`[VersionManager] Checkout Error: ${tag}`, error.message);
+        return false;
+    }
+}
+
+module.exports = { getLatestTag, checkoutTag };

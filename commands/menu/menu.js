@@ -1,8 +1,9 @@
 const { readJson } = require('../../utils/safeJson');
-const { formatUptime } = require('../../utils/uptime');
+const { getFormattedUptime } = require('../../utils/uptime');
 const path = require('path');
 
 const BOT_CONFIG = path.join(__dirname, '../../config/bot.json');
+const OWNER_MENU_OVERRIDE = path.join(__dirname, '../../data/ownerMenu.json');
 
 module.exports = {
     name: 'menu',
@@ -10,20 +11,27 @@ module.exports = {
     category: 'menu',
     async execute(sock, msg, args, extra) {
         try {
+            // Load dynamic config
             const bot = await readJson(BOT_CONFIG, {
-                version: "1.0.6",
+                version: "v1.0.6",
                 prefix: ".",
                 owner: "Edun Oluwadarasimi David"
             });
 
-            const uptime = formatUptime();
+            // Try loading custom menu override
+            const override = await readJson(OWNER_MENU_OVERRIDE, null);
+            if (override && override.menu) {
+                return await extra.reply(override.menu);
+            }
+
+            const uptime = getFormattedUptime();
             const { owner, prefix, version } = bot;
 
             const menuText = `╭─╼─≪ *EDBOTS* ≫─╼─╮
 │ 🤖 *User:* ${owner}
 │ ⏱️ *Uptime:* ${uptime}
 │ 👑 *Prefix:* [ ${prefix} ]
-│ ⚙️ *Version:* v${version}
+│ ⚙️ *Version:* ${version}
 ╰╼━━━━━━━━━━━━━━━╾╯
 
 ╭╼━≪ 🧠 *AI & AUTOMATION* ≫━╾╮
@@ -49,7 +57,7 @@ module.exports = {
 ╭╼━≪ 🎮 *ENTERTAINMENT* ≫━╾╮
 ┃ • .joke
 ┃ • .meme
-┃ • • .ship
+┃ • .ship
 ┃ • .truth
 ┃ • .dare
 ┃ • .gayrate
@@ -105,7 +113,7 @@ _Powered by Edun Oluwadarasimi_`.trim();
 
             await sock.sendMessage(msg.key.remoteJid, { text: menuText }, { quoted: msg });
         } catch (error) {
-            console.error('Menu command error:', error);
+            console.error('[Menu Error]', error);
         }
     }
 };
