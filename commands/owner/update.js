@@ -1,4 +1,4 @@
-const { getLatestTag, checkoutTag } = require('../../utils/versionManager');
+const { getLatestTag, checkoutTag, getCurrentTag } = require('../../utils/versionManager');
 const { readJson, writeJson } = require('../../utils/safeJson');
 const { setRestartFlag } = require('../../utils/restartManager');
 const path = require('path');
@@ -13,41 +13,44 @@ module.exports = {
     async execute(sock, msg, args, extra) {
         try {
             const chatId = msg.key.remoteJid;
-            await extra.reply('⏳ *Fetching latest updates from repository...*');
+            const currentTag = await getCurrentTag();
+            
+            await extra.reply(`⏳ *Checking for updates...*\n\n*Current Version:* ${currentTag}`);
 
             const latestTag = await getLatestTag();
             if (!latestTag) {
-                return await extra.reply('❌ No git tags found in the repository.');
+                return await extra.reply('❌ *Failed to fetch tags.* Ensure the repository has git tags and git is configured correctly.');
             }
 
-            // Load config
-            const bot = await readJson(BOT_CONFIG, {});
-            if (bot.version === latestTag) {
-                return await extra.reply(`✅ *EDBOTS is already up to date (Version: ${latestTag})*`);
+            if (currentTag === latestTag) {
+                return await extra.reply(`✅ *EDBOTS is already up to date!*\n\n*Version:* ${latestTag}`);
             }
 
-            await extra.reply(`🚀 *New version detected: ${latestTag}*\nUpdating and checking out...`);
+            await extra.reply(`🚀 *New version detected: ${latestTag}*\n\nUpdating from ${currentTag} to ${latestTag}...\nThis may take a moment.`);
 
             const checkedOut = await checkoutTag(latestTag);
             if (!checkedOut) {
-                return await extra.reply('❌ Failed to checkout the latest tag. Ensure your local repo is clean.');
+                return await extra.reply('❌ *Update failed during checkout.*\n\nPossible causes:\n1. Uncommitted local changes to tracked files.\n2. Git network error.\n3. Permission issues.');
             }
 
-            // Update config.json
+            // Update bot.json config with the new version
+            const bot = await readJson(BOT_CONFIG, {});
             bot.version = latestTag;
             await writeJson(BOT_CONFIG, bot);
 
-            await extra.reply(`✅ *EDBOTS successfully updated to ${latestTag}*.\nRestarting bot in 2 seconds...`);
+            await extra.reply(`✅ *EDBOTS successfully updated to ${latestTag}!*\n\nRestarting bot to apply changes...`);
 
-            // Save restart flag
+            // Save restart flag to notify owner after reboot
             await setRestartFlag(chatId);
 
-            // Trigger restart
-            setTimeout(() => process.exit(0), 2000);
+            // Give a short delay for message delivery before exit
+            setTimeout(() => {
+                process.exit(0);
+            }, 2000);
 
         } catch (error) {
             console.error('[Update Error]', error);
-            await extra.reply('❌ An error occurred during the update process.');
+            await extra.reply(`❌ *An error occurred during update:*\n${error.message}`);
         }
     }
 };

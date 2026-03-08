@@ -3,6 +3,7 @@
  */
 
 const { exec } = require('child_process');
+const { setRestartFlag } = require('../../utils/restartManager');
 
 module.exports = {
   name: 'restart',
@@ -14,7 +15,11 @@ module.exports = {
 
   async execute(sock, msg, args, extra) {
     try {
-      await extra.reply('🔁 Restarting bot...');
+      const chatId = msg.key.remoteJid;
+      await extra.reply('🔁 *Restarting bot...*');
+
+      // Set flag so we can notify the owner after restart
+      await setRestartFlag(chatId);
 
       const run = (cmd) =>
         new Promise((resolve, reject) => {
@@ -29,13 +34,13 @@ module.exports = {
         await run('pm2 restart all');
         return;
       } catch (e) {
-        console.log('PM2 not available, falling back to process.exit');
+        console.log('[SYSTEM] PM2 not available, falling back to process.exit');
       }
 
-      // For panels & nodemon – they usually restart on exit
+      // For panels, heroku, & nodemon – they usually restart on exit
       setTimeout(() => {
         process.exit(0);
-      }, 500);
+      }, 1000);
     } catch (error) {
       console.error('Restart error:', error);
       await extra.reply(`❌ Error restarting bot: ${error.message}`);
