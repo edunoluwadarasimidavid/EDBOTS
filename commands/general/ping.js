@@ -1,30 +1,24 @@
 /**
- * Ping Command - Check bot response time
+ * @file ping.js
+ * @description System status check.
  */
 
 module.exports = {
-    name: 'ping',
-    aliases: ['p'],
-    category: 'general',
-    description: 'Check bot response time',
-    usage: '.ping',
-    
-    async execute(sock, msg, args, extra) {
-      try {
+    name: "ping",
+    aliases: ["status", "info"],
+    async execute(sock, msg, args) {
         const start = Date.now();
-        const sent = await extra.reply('🏓 Pinging...');
-        const end = Date.now();
-        
-        const responseTime = end - start;
-        
-        await sock.sendMessage(extra.from, {
-          text: `🏓 *Pong!*\n⚡ Response Time: ${responseTime}ms`,
-          edit: sent.key
-        });
-        
-      } catch (error) {
-        await extra.reply(`❌ Error: ${error.message}`);
-      }
+        const senderJid = msg.key.remoteJid;
+
+        // Calculate latency
+        const latency = Date.now() - start;
+
+        // Memory Usage
+        const memory = process.memoryUsage();
+        const ramUsage = (memory.rss / 1024 / 1024).toFixed(2);
+
+        await sock.sendMessage(senderJid, { 
+            text: `*Pong!* 🏓\n\n⚡ Latency: ${latency}ms\n💾 RAM Usage: ${ramUsage} MB` 
+        }, { quoted: msg });
     }
-  };
-  
+};

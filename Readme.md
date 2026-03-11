@@ -1,22 +1,16 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f2027,50:203a43,100:2c5364&height=180&section=header&text=EDBOTS&fontSize=50&fontColor=ffffff&animation=fadeIn&fontAlignY=35"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f2027,50:203a43,100:2c5364&height=180&section=header&text=EDBOTS+V2&fontSize=50&fontColor=ffffff&animation=fadeIn&fontAlignY=35"/>
 
-# 🤖 EDBOTS  
-### Production-Ready WhatsApp Multi-Device Automation Framework
-
-<br/>
-
-<img src="https://readme-typing-svg.herokuapp.com?font=Poppins&size=22&duration=4000&color=00F5FF&center=true&vCenter=true&width=650&lines=Multi-Device+WhatsApp+Bot;Secure+Session+Pairing;Modular+Command+System;Optimized+For+Cloud+Deployment;Built+With+Baileys+MD"/>
+# 🤖 EDBOTS: The Industrial-Grade WhatsApp Framework
+### Advanced • Secure • Modular • Terminal-Optimized
 
 <br/>
 
-<img src="https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white"/>
-<img src="https://img.shields.io/badge/Baileys-Multi%20Device-00bcd4?style=for-the-badge"/>
-<img src="https://img.shields.io/badge/Pairing-Live-success?style=for-the-badge"/>
-<img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge"/>
-<img src="https://img.shields.io/github/stars/edunoluwadarasimidavid/EDBOTS?style=for-the-badge"/>
-<img src="https://img.shields.io/github/forks/edunoluwadarasimidavid/EDBOTS?style=for-the-badge"/>
+[![Node.js Version](https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Baileys MD](https://img.shields.io/badge/Baileys-Multi%20Device-00bcd4?style=for-the-badge)](https://github.com/WhiskeySockets/Baileys)
+[![Architecture](https://img.shields.io/badge/Architecture-Modular-blueviolet?style=for-the-badge)](https://github.com/edunoluwadarasimidavid/EDBOTS)
+[![Security](https://img.shields.io/badge/Security-Anti--Tamper-red?style=for-the-badge)](https://github.com/edunoluwadarasimidavid/EDBOTS)
 
 </div>
 
@@ -24,280 +18,140 @@
 
 # 🌍 Overview
 
-**EDBOTS** is a scalable WhatsApp Multi-Device automation framework built using the Baileys MD library.
+**EDBOTS** is a high-performance, terminal-based WhatsApp automation framework built on the **Baileys Multi-Device (MD)** library. Unlike standard bots, EDBOTS is engineered with a **Security-First** approach, featuring a protected core, recursive command loading, and a sandboxed execution environment.
 
-It is designed for:
-
-- ⚡ High performance and stability
-- 🔐 Secure session handling
-- 🧩 Modular command structure
-- 🌐 Cloud-ready deployment
-- 🛠 Developer customization
-
-This project is open-source and production-structured.
+This project is designed for developers who need a stable, scalable, and tamper-proof foundation for WhatsApp automation.
 
 ---
 
-# ✨ Working Features
+# 🛡️ Core Security Features
 
-| Feature | Status | Description |
-|----------|--------|------------|
-| 🔐 Multi-Device Login | ✅ Working | Compatible with latest WhatsApp MD |
-| 🤖 Puter.js AI | ✅ Added | Free AI models (GPT-4o-mini, etc.) |
-| 💬 AI Auto-Reply | ✅ Added | Toggleable AI for all messages |
-| 🌐 Cloudflare Tunnel | ✅ Added | Secure auth link via `cloudflared` |
-| 👥 Group AI | ✅ New | Respond to `.edbot-ai` only |
-| 📩 Private AI | ✅ New | Greeting detection & `ai:` shortcut |
-| 🔑 Keyword Replies | ✅ New | Configurable auto-replies in `data/` |
-| 🌐 Web Pairing | ✅ Live | Pair via website (no terminal QR needed) |
-| 🧩 Modular Commands | ✅ Working | Add commands inside `/commands` |
-| 👑 Owner System | ✅ Working | Restricted admin commands |
-| 👥 Group Management | ✅ Working | Anti-link, moderation tools |
-| ⚡ Lightweight Core | ✅ Optimized | Efficient memory handling |
-| 🔄 Auto Reconnect | ✅ Enabled | Handles disconnect events |
-| 🎨 Config Customization | ✅ Editable | Customize via `config.js` |
-| 👁️ View-Once Unlock | ✅ Fixed | Reveal images/videos/audio |
-| 🛡️ Crash Protection| ✅ Active | Prevents fatal process exits |
-| 🔄 Auto-Update | ✅ New | Syncs to latest Git tags |
-| 🔔 Restart Notify | ✅ Added | Confirmation after bot restart |
-| 🧹 Auto-Cleanup | ✅ Enabled | Automatically clears temp media |
+EDBOTS implements several layers of protection to ensure system integrity and developer attribution:
+
+- **Immutable Developer Metadata:** Core developer information (Name, Email, Repository) is hard-coded and **Object-Frozen**. It cannot be modified at runtime.
+- **Runtime Integrity Check:** On startup, the system performs a self-audit. If the developer metadata is missing or altered, the bot immediately terminates execution.
+- **Sandboxed Command Execution:** Every command runs inside an isolated `try/catch` block. A failure in one command (e.g., a network error or syntax mistake in a plugin) will **never** crash the entire bot.
+- **Pre-Flight Environment Setup:** Automatically detects and creates missing directories (`session`, `commands`, `temp`) to ensure zero-config first runs.
+- **Global Process Safety:** Listeners for `uncaughtException` and `unhandledRejection` prevent "silent deaths" and ensure the bot remains online even during unexpected system-level errors.
 
 ---
 
-# 🚀 Professional Bot Features
+# 🏗️ Modular Architecture
 
-### 🔄 Automated Git-Tag Updates
-EDBOTS is now fully integrated with Git version control.
-- **Command:** `.update` (Owner only)
-- **Logic:** Automatically fetches all tags, detects the latest release, and performs a `git checkout`.
-- **Auto-Sync:** Updates `config/bot.json` instantly to match the repository version.
+The project follows a clean, decoupled structure for maximum scalability:
 
-### 🔔 Smart Restart System
-The bot now features a persistent restart notification system.
-- **Verification:** After using `.update` or `.restart`, the bot saves a temporary flag.
-- **Notification:** Once the bot reconnects to WhatsApp, it identifies the flag and sends a **"Restart completed successfully"** message to the owner.
-
-### 📑 Advanced Help & Documentation
-To maintain a clean and professional menu, EDBOTS uses a dedicated documentation engine:
-- **Command:** `.help <command_name>`
-- **Content:** Displays Description, Usage, Permissions, and Real-world Examples.
-- **Scalability:** Documentation is dynamically loaded from `data/commandHelp.json`.
-
-### 🛡️ Industrial-Grade Stability
-- **Crash-Safe:** Global listeners for `uncaughtException` ensure that the bot process never dies from single-command failures.
-- **Isolated Execution:** Every command runs in its own protected scope.
-- **Resource Management:** Automatic deletion of media from `temp/` after 60 seconds to keep the bot lightweight.
-
----
-
-# 🤖 AI Integration (Puter.js)
-
-EDBOTS features integrated AI using **Puter.js**, providing free access to powerful models like **GPT-4o** without needing manual API keys.
-
-### 🚀 AI Commands
-
-| Command | Usage | Description |
-|---------|-------|-------------|
-| `.edbot-ai <q>` | Global | Asks AI a question (Works in Group/Private) |
-| `.ai <question>`| Global | Shorter alias for `.edbot-ai` |
-| `ai: <question>` | Private | Quick AI shortcut in private chat |
-| `.auto-reply on` | Owner | Enables global AI auto-reply (Generates Auth Link) |
-| `.auto-reply off` | Owner | Disables AI and removes stored session |
-
-### 🔐 Authentication (Cloudflare Tunnel)
-
-To connect the AI, use `.auto-reply on`. The bot will automatically:
-1. Start a local secure server.
-2. Create a public tunnel using **Cloudflare** (`cloudflared`).
-3. Generate a secure `puter.com` authentication link.
-4. Automatically detect and save your session once you log in.
-
-### 🧠 Intelligent Routing
-
-- **Groups:** The AI only triggers when specifically called using `.edbot-ai` or `.ai`. Normal messages are ignored to prevent spam.
-- **Private Chat:** 
-  - **Auto-Reply Mode:** If enabled, the bot answers *every* message using AI (excluding commands).
-  - **Greeting Detection:** Detects "hi", "hello", etc., and sends an interactive menu.
-  - **Keyword Matching:** Prioritizes manual keywords from `data/commandFile.json`.
-  - **Shortcut:** Supports `ai: <question>` even if auto-reply is off.
-
-### ⚙ AI Customization
-
-Customize personality and model in `ai/instructions.json`:
-
-```json
-{
-  "system_prompt": "You are EDBOTS AI assistant...",
-  "model": "gpt-4o"
-}
-```
-
----
-
-# 📁 Project Structure
-
-```
-EDBOTS/
-├── commands/
-│   ├── menu/         # Clean dashboard logic
-│   ├── system/       # Help & documentation system
-│   ├── owner/        # Git updates & bot management
-│   └── ...           # All other categories
+```text
+edbots/
+├── core/
+│   ├── developer.js     # [PROTECTED] Hard-coded metadata & integrity logic
+│   ├── engine.js        # [ENGINE] Baileys connection & recursive loader
+│   └── permissions.js   # [SECURITY] Global owner/admin verification
 ├── config/
-│   └── bot.json      # Dynamic version & prefix config
-├── data/
-│   ├── commandHelp.json  # Command documentation
-│   └── ownerMenu.json    # Menu overrides
-├── utils/
-│   ├── restartManager.js # Restart notification logic
-│   ├── versionManager.js # Git tag & update logic
-│   └── crashProtector.js # Process safety & monitoring
-├── handler.js        # Main message router
-└── index.js
+│   └── settings.js      # [CONFIG] User-editable bot & owner settings
+├── commands/            # [MODULES] Recursive command directory
+│   ├── general/         # Public commands (menu, ping, etc.)
+│   ├── admin/           # Group moderation (kick, promote)
+│   └── owner/           # System-level commands (restart, update)
+├── session/             # [DATA] Multi-file authentication storage
+├── temp/                # [DATA] Temporary media buffer
+├── index.js             # [ENTRY] Secure system initialization
+└── package.json         # [MANIFEST] Dependency management
 ```
 
 ---
 
-# 🛠 Local Installation
+# 🚀 Technical Capabilities
 
-```bash
-git clone https://github.com/edunoluwadarasimidavid/EDBOTS.git
-cd EDBOTS
-npm install
-node index.js
+### 1. Recursive Command Loading
+The engine automatically scans the `commands/` directory and **all its subdirectories**. This allows you to organize hundreds of commands into clean categories without manual imports.
+
+### 2. Advanced Message Parsing
+The built-in parser extracts text and commands from:
+- Standard text messages
+- Image/Video captions
+- Quoted messages
+- Button responses
+- List selections
+
+### 3. Professional CLI Experience
+- **Startup Banner:** Displays bot name, developer info, and connection status.
+- **Color-Coded Logs:** Real-time terminal logging for execution (`EXEC`), errors (`ERROR`), and connection updates (`CONNECTION`).
+- **Memory Management:** Includes commands to monitor RAM usage and system latency.
+
+---
+
+# 🛠️ Installation & Setup
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (Version 18.0.0 or higher)
+- [Git](https://git-scm.com/)
+- A WhatsApp account for linking
+
+### Step-by-Step Installation
+1. **Clone the Project:**
+   ```bash
+   git clone https://github.com/edunoluwadarasimidavid/EDBOTS.git
+   cd EDBOTS
+   ```
+
+2. **Install Dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Configure the Bot:**
+   Edit `config/settings.js` to set your owner number and preferred bot name.
+   ```bash
+   nano config/settings.js
+   ```
+
+4. **Launch EDBOTS:**
+   ```bash
+   npm start
+   ```
+
+5. **Link Account:** Scan the QR code displayed in your terminal using WhatsApp → Linked Devices.
+
+---
+
+# 🧩 Adding New Commands
+
+EDBOTS makes it easy to add features. Create a `.js` file anywhere inside the `commands/` folder using this template:
+
+```javascript
+/**
+ * @file example.js
+ */
+module.exports = {
+    name: "hello",             // Command trigger
+    aliases: ["hi", "hey"],     // Optional shortcuts
+    async execute(sock, msg, args) {
+        const jid = msg.key.remoteJid;
+        await sock.sendMessage(jid, { text: "Hello! EDBOTS is working." });
+    }
+};
 ```
 
 ---
 
-# 👨‍💻 Developer
+# 👨‍💻 Developer Information
 
-Edun Oluwadarasimi David  
-Website: https://edunoluwadarasimidavid.name.ng  
-Email: davidedun2010@gmail.com  
-Repository: https://github.com/edunoluwadarasimidavid/EDBOTS.git  
+- **Developer:** Edun Oluwadarasimi David
+- **Email:** [davidedun2010@gmail.com](mailto:davidedun2010@gmail.com)
+- **Repository:** [GitHub: EDBOTS](https://github.com/edunoluwadarasimidavid/EDBOTS.git)
+
+> **Note:** Modification of developer metadata in `core/developer.js` is strictly prohibited by the system's integrity engine.
 
 ---
 
 # 📜 License
 
-MIT License
+This project is licensed under the **MIT License**.
 
 <div align="center">
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:2c5364,50:203a43,100:0f2027&height=120&section=footer"/>
 
-### Powered by Baileys MD • Built with precision
-
-</div>
-
-
-### 🚀 AI Commands
-
-| Command | Usage | Description |
-|---------|-------|-------------|
-| `.edbot-ai <q>` | Global | Asks AI a question (Works in Group/Private) |
-| `.ai <question>`| Global | Shorter alias for `.edbot-ai` |
-| `ai: <question>` | Private | Quick AI shortcut in private chat |
-| `.auto-reply on` | Owner | Enables global AI auto-reply (Generates Auth Link) |
-| `.auto-reply off` | Owner | Disables AI and removes stored session |
-
-### 🔐 Authentication (Cloudflare Tunnel)
-
-To connect the AI, use `.auto-reply on`. The bot will automatically:
-1. Start a local secure server.
-2. Create a public tunnel using **Cloudflare** (`cloudflared`).
-3. Generate a secure `puter.com` authentication link.
-4. Automatically detect and save your session once you log in.
-
-### 🧠 Intelligent Routing
-
-- **Groups:** The AI only triggers when specifically called using `.edbot-ai` or `.ai`. Normal messages are ignored to prevent spam.
-- **Private Chat:** 
-  - **Auto-Reply Mode:** If enabled, the bot answers *every* message using AI (excluding commands).
-  - **Greeting Detection:** Detects "hi", "hello", etc., and sends an interactive menu.
-  - **Keyword Matching:** Prioritizes manual keywords from `data/commandFile.json`.
-  - **Shortcut:** Supports `ai: <question>` even if auto-reply is off.
-
-### ⚙ AI Customization
-
-Customize personality and model in `ai/instructions.json`:
-
-```json
-{
-  "system_prompt": "You are EDBOTS AI assistant...",
-  "model": "gpt-4o-mini"
-}
-```
-
----
-
-# 📁 Project Structure
-
-```
-EDBOTS/
-├── commands/
-│   ├── group/        # Group-specific commands
-│   ├── ownerAI/      # Private chat AI logic
-│   └── ...           # General commands
-├── data/             # JSON data for menus & keywords
-├── utils/
-│   ├── aiEngine.js   # Centralized AI interface
-│   └── puterAI.js    # Puter.js connection logic
-├── config.js
-├── handler.js        # Main message router
-└── index.js
-```
-
----
-
-# 🛠 Local Installation
-
-```bash
-git clone https://github.com/edunoluwadarasimidavid/EDBOTS.git
-cd EDBOTS
-npm install
-node index.js
-```
-
----
-
-# 🔐 Authentication Methods
-
-## 1️⃣ Session String
-
-Add to `config.js` or use `SESSION_ID` environment variable.
-
----
-
-## 2️⃣ QR Login (Optional)
-
-Run `node index.js` and scan the QR from WhatsApp → Linked Devices.
-
----
-
-# 🚀 Deployment Options
-
-EDBOTS supports VPS, Docker, Railway, Render, and Pterodactyl. The tunnel system is optimized for restricted container environments using Cloudflare Quick Tunnels.
-
----
-
-# 👨‍💻 Developer
-
-Edun Oluwadarasimi David  
-Website: https://edunoluwadarasimidavid.name.ng  
-Email: davidedun2010@gmail.com  
-Repository: https://github.com/edunoluwadarasimidavid/EDBOTS.git  
-
----
-
-# 📜 License
-
-MIT License
-
-<div align="center">
-
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:2c5364,50:203a43,100:0f2027&height=120&section=footer"/>
-
-### Powered by Baileys MD • Built with precision
+### Built with Precision • Refactored for Excellence • Powered by Baileys MD
 
 </div>

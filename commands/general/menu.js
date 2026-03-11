@@ -1,193 +1,66 @@
 /**
- * Menu Command - Display all available commands
+ * @file menu.js
+ * @description Dynamic menu command with categorization.
  */
 
-const config = require('../../config');
-const { loadCommands } = require('../../utils/commandLoader');
-const versionData = require('../../bot_version.json');
+const developer = require("../../core/developer");
+const settings = require("../../config/settings");
+const os = require("os");
 
 module.exports = {
-  name: 'menu',
-  aliases: ['help', 'commands'],
-  category: 'general',
-  description: 'Show all available commands',
-  usage: '.menu',
-  
-  async execute(sock, msg, args, extra) {
-    try {
-      const commands = loadCommands();
-      const categories = {};
-      
-      // Group commands by category
-      commands.forEach((cmd, name) => {
-        if (cmd.name === name) { // Only count main command names, not aliases
-          if (!categories[cmd.category]) {
-            categories[cmd.category] = [];
-          }
-          categories[cmd.category].push(cmd);
+    name: "menu",
+    aliases: ["help", "list", "commands"],
+    async execute(sock, msg, args) {
+        try {
+            const senderJid = msg.key.remoteJid;
+            const user = msg.pushName || "User";
+
+            // Simple uptime calculation
+            const uptime = process.uptime();
+            const uptimeString = new Date(uptime * 1000).toISOString().substr(11, 8);
+
+            const menuText = `
+╭─── *${settings.botName.toUpperCase()}* ───
+│ 👋 Hi, *${user}*!
+│ 🤖 Developer: ${developer.developer}
+│ ⏳ Uptime: ${uptimeString}
+│ 💻 Platform: ${os.platform()}
+│ 🔗 Repo: ${developer.repository}
+╰──────────────────
+
+*Available Commands:*
+
+╭── *General* ──
+│ • ${settings.prefix}menu
+│ • ${settings.prefix}ping
+╰───────────────
+
+╭── *Admin* ──
+│ • ${settings.prefix}kick (Group Only)
+│ • ${settings.prefix}promote (Group Only)
+╰─────────────
+
+_Type ${settings.prefix}help <command> for details._
+            `.trim();
+
+            // Send with a proper "context info" for a richer look (optional but good)
+            await sock.sendMessage(senderJid, { 
+                text: menuText,
+                contextInfo: {
+                    externalAdReply: {
+                        title: settings.botName,
+                        body: "Advanced WhatsApp Automation",
+                        thumbnailUrl: "https://telegra.ph/file/example-image.jpg", // Placeholder
+                        sourceUrl: developer.repository,
+                        mediaType: 1,
+                        renderLargerThumbnail: true
+                    }
+                }
+            }, { quoted: msg });
+
+        } catch (error) {
+            console.error("Menu command error:", error);
+            await sock.sendMessage(msg.key.remoteJid, { text: "Failed to load menu." });
         }
-      });
-      
-      const ownerNames = Array.isArray(config.ownerName) ? config.ownerName : [config.ownerName];
-      const displayOwner = ownerNames[0] || config.ownerName || 'Bot Owner (EDBOTS) ';
-      
-      let menuText = `╭━━『 *${config.botName}* 』━━╮\n\n`;
-      menuText += `👋 Hello @${extra.sender.split('@')[0]}!\n\n`;
-      menuText += `⚡ Prefix: ${config.prefix}\n`;
-      menuText += `📦 Total Commands: ${commands.size}\n`;
-      menuText += `👑 Owner: ${displayOwner}\n\n`;
-      
-      // General Commands
-      if (categories.general) {
-        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
-        menuText += `┃ 🧭 GENERAL COMMAND\n`;
-        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
-        categories.general.forEach(cmd => {
-          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
-        });
-        menuText += `\n`;
-      }
-      
-      // AI Commands
-      if (categories.ai) {
-        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
-        menuText += `┃ 🤖 AI COMMAND\n`;
-        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
-        categories.ai.forEach(cmd => {
-          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
-        });
-        menuText += `\n`;
-      }
-      
-      // Group Commands
-      if (categories.group) {
-        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
-        menuText += `┃ 🔵 GROUP COMMAND\n`;
-        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
-        categories.group.forEach(cmd => {
-          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
-        });
-        menuText += `\n`;
-      }
-      
-      // Admin Commands
-      if (categories.admin) {
-        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
-        menuText += `┃ 🛡️ ADMIN COMMAND\n`;
-        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
-        categories.admin.forEach(cmd => {
-          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
-        });
-        menuText += `\n`;
-      }
-      
-      // Owner Commands
-      if (categories.owner) {
-        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
-        menuText += `┃ 👑 OWNER COMMAND\n`;
-        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
-        categories.owner.forEach(cmd => {
-          if (cmd.name === 'update') {
-            menuText += `│ ➜ ${config.prefix}update → Update bot to latest version\n`;
-            menuText += `│ ➜ ${config.prefix}update rollback → Rollback to previous version\n`;
-            menuText += `│ ➜ ${config.prefix}update rollback <version> → Rollback to specific version\n`;
-          } else {
-            menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
-          }
-        });
-        menuText += `\n`;
-      }
-      
-      // Media Commands
-      if (categories.media) {
-        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
-        menuText += `┃ 🎞️ MEDIA COMMAND\n`;
-        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
-        categories.media.forEach(cmd => {
-          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
-        });
-        menuText += `\n`;
-      }
-      
-      // Fun Commands
-      if (categories.fun) {
-        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
-        menuText += `┃ 🎭 FUN COMMAND\n`;
-        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
-        categories.fun.forEach(cmd => {
-          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
-        });
-        menuText += `\n`;
-      }
-      
-      // Utility Commands
-      if (categories.utility) {
-        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
-        menuText += `┃ 🔧 UTILITY COMMAND\n`;
-        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
-        categories.utility.forEach(cmd => {
-          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
-        });
-        menuText += `\n`;
-      }
-
-       // Anime Commands
-       if (categories.anime) {
-        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
-        menuText += `┃ 👾 ANIME COMMAND\n`;
-        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
-        categories.anime.forEach(cmd => {
-          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
-        });
-        menuText += `\n`;
-      }
-
-       // Textmaker Commands
-       if (categories.utility) {
-        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
-        menuText += `┃ 🖋️ TEXTMAKER COMMAND\n`;
-        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
-        categories.textmaker.forEach(cmd => {
-          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
-        });
-        menuText += `\n`;
-      }
-      
-      menuText += `╰━━━━━━━━━━━━━━━━━\n\n`;
-      menuText += `💡 Type ${config.prefix}help <command> for more info\n`;
-      menuText += `🌟 Bot Version: ${versionData.version}\n`;
-      
-      // Send menu with image
-      const fs = require('fs');
-      const path = require('path');
-      const imagePath = path.join(__dirname, '../../utils/bot_image.jpg');
-      
-      if (fs.existsSync(imagePath)) {
-        // Send image with newsletter forwarding context
-        const imageBuffer = fs.readFileSync(imagePath);
-        await sock.sendMessage(extra.from, {
-          image: imageBuffer,
-          caption: menuText,
-          mentions: [extra.sender],
-          contextInfo: {
-            forwardingScore: 1,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: config.newsletterJid || '120363407258579577@newsletter',
-              newsletterName: config.botName,
-              serverMessageId: -1
-            }
-          }
-        }, { quoted: msg });
-      } else {
-        await sock.sendMessage(extra.from, {
-          text: menuText,
-          mentions: [extra.sender]
-        }, { quoted: msg });
-      }
-      
-    } catch (error) {
-      await extra.reply(`❌ Error: ${error.message}`);
     }
-  }
 };

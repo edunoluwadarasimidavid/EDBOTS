@@ -1,4 +1,4 @@
-const { getLatestTag, checkoutTag, getCurrentTag } = require('../../utils/versionManager');
+const { getLatestTag, resetToTag, getCurrentTag } = require('../../utils/versionManager');
 const { readJson, writeJson } = require('../../utils/safeJson');
 const { setRestartFlag } = require('../../utils/restartManager');
 const path = require('path');
@@ -26,11 +26,12 @@ module.exports = {
                 return await extra.reply(`✅ *EDBOTS is already up to date!*\n\n*Version:* ${latestTag}`);
             }
 
-            await extra.reply(`🚀 *New version detected: ${latestTag}*\n\nUpdating from ${currentTag} to ${latestTag}...\nThis may take a moment.`);
+            await extra.reply(`🚀 *New version detected: ${latestTag}*\n\nUpdating from ${currentTag} to ${latestTag}...\n(Note: This will reset any local changes to core files)`);
 
-            const checkedOut = await checkoutTag(latestTag);
-            if (!checkedOut) {
-                return await extra.reply('❌ *Update failed during checkout.*\n\nPossible causes:\n1. Uncommitted local changes to tracked files.\n2. Git network error.\n3. Permission issues.');
+            // Use resetToTag to bypass local change conflicts
+            const updated = await resetToTag(latestTag);
+            if (!updated) {
+                return await extra.reply('❌ *Update failed during checkout.*\n\nPossible causes:\n1. Git remote communication error.\n2. Permission issues in the Termux environment.');
             }
 
             // Update bot.json config with the new version
