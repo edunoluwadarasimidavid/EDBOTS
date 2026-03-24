@@ -2,13 +2,13 @@
  * Devil Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'devil',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create devil text effect',
   usage: '.devil <text>',
   

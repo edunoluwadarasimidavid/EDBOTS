@@ -2,13 +2,13 @@
  * Impressive Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'impressive',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create impre  ssive text effect',
   usage: '.impressive <text>',
   

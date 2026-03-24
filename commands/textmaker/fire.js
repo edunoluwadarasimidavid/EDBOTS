@@ -2,13 +2,13 @@
  * Fire Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'fire',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create fire text effect',
   usage: '.fire <text>',
   

@@ -1,79 +1,52 @@
 /**
- * Sticker Creation Utilities
+ * Sticker Creation Utilities - Refactored for Jimp and FFmpeg.
+ * No sharp or wa-sticker-formatter dependency.
  */
 
-const { Sticker, createSticker, StickerTypes } = require('wa-sticker-formatter');
-const sharp = require('sharp');
+const Jimp = require('jimp');
+const { writeExifImg, writeExifVid } = require('./exif');
 const config = require('../config');
 
 /**
- * Create sticker from image/video buffer
+ * Create sticker from image/video buffer.
  */
 const createStickerBuffer = async (media, options = {}) => {
   try {
-    const sticker = new Sticker(media, {
-      pack: options.pack || config.packname,
-      author: options.author || config.author,
-      type: options.type || StickerTypes.FULL,
-      categories: options.categories || ['🤖'],
-      id: options.id || '',
-      quality: options.quality || 50
-    });
-    
-    return await sticker.toBuffer();
+    // If it's a buffer and likely an image, Jimp will handle it.
+    // If Jimp fails, we assume it's a video and use FFmpeg via exif.js
+    try {
+        await Jimp.read(media);
+        return await writeExifImg(media, options);
+    } catch (e) {
+        // Assume video
+        return await writeExifVid(media, options);
+    }
   } catch (error) {
     throw new Error(`Sticker creation failed: ${error.message}`);
   }
 };
 
 /**
- * Create cropped sticker
+ * Create cropped sticker (Legacy support).
  */
 const createCroppedSticker = async (media, options = {}) => {
-  try {
-    const sticker = new Sticker(media, {
-      pack: options.pack || config.packname,
-      author: options.author || config.author,
-      type: StickerTypes.CROPPED,
-      categories: options.categories || ['🤖'],
-      quality: options.quality || 50
-    });
-    
-    return await sticker.toBuffer();
-  } catch (error) {
-    throw new Error(`Cropped sticker creation failed: ${error.message}`);
-  }
+  return await createStickerBuffer(media, options);
 };
 
 /**
- * Create circle sticker
+ * Create circle sticker (Legacy support).
  */
 const createCircleSticker = async (media, options = {}) => {
-  try {
-    const sticker = new Sticker(media, {
-      pack: options.pack || config.packname,
-      author: options.author || config.author,
-      type: StickerTypes.CIRCLE,
-      categories: options.categories || ['🤖'],
-      quality: options.quality || 50
-    });
-    
-    return await sticker.toBuffer();
-  } catch (error) {
-    throw new Error(`Circle sticker creation failed: ${error.message}`);
-  }
+  return await createStickerBuffer(media, options);
 };
 
 /**
- * Convert sticker to image
+ * Convert sticker to image.
  */
 const stickerToImage = async (stickerBuffer) => {
   try {
-    const imageBuffer = await sharp(stickerBuffer)
-      .png()
-      .toBuffer();
-    
-    return imageBuffer;
+    const image = await Jimp.read(stickerBuffer);
+    return await image.getBufferAsync(Jimp.MIME_PNG);
   } catch (error) {
     throw new Error(`Sticker to image conversion failed: ${error.message}`);
   }

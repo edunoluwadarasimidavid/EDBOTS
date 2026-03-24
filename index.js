@@ -3,7 +3,8 @@
  * @description Secure Entry Point for EDBOTS.
  */
 
-const { startBot, loadCommands } = require("./core/engine");
+const { startBot } = require("./core/engine");
+require("dotenv").config();
 const developer = require("./core/developer");
 const fs = require("fs");
 const path = require("path");
@@ -14,7 +15,6 @@ const path = require("path");
  */
 process.on("uncaughtException", (err) => {
     console.error("\x1b[31m[CRITICAL] Uncaught Exception:\x1b[0m", err.message);
-    // console.error(err.stack); // Optional: uncomment for verbose debugging
 });
 
 process.on("unhandledRejection", (reason, promise) => {
@@ -25,7 +25,7 @@ process.on("unhandledRejection", (reason, promise) => {
  * Pre-Flight Checks
  */
 function ensureDirectories() {
-    const dirs = ["commands", "session", "temp"];
+    const dirs = ["commands", "session", "temp", "database"];
     dirs.forEach(dir => {
         const dirPath = path.join(__dirname, dir);
         if (!fs.existsSync(dirPath)) {
@@ -40,7 +40,7 @@ function ensureDirectories() {
  */
 (async () => {
     try {
-        console.clear(); // Clean terminal on start
+        console.clear(); 
         
         // 1. Security Check
         developer.checkIntegrity();
@@ -50,10 +50,7 @@ function ensureDirectories() {
 
         console.log("\x1b[34m[INFO] Initializing EDBOTS System...\x1b[0m");
         
-        // 3. Load Commands
-        loadCommands();
-
-        // 4. Start Bot Engine
+        // 3. Start Bot Engine (Commands are loaded inside engine/connection)
         await startBot();
 
     } catch (error) {

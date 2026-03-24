@@ -2,13 +2,13 @@
  * Arena Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'arena',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create arena text effect',
   usage: '.arena <text>',
   

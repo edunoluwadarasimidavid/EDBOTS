@@ -18,8 +18,6 @@ module.exports = {
             return sock.sendMessage(senderJid, { text: "⚠️ Access Denied: This command is restricted to the bot owner." }, { quoted: msg });
         }
 
-        await sock.sendMessage(senderJid, { text: "👑 *Owner Dashboard*
-
-You have full access to the system." }, { quoted: msg });
+        await sock.sendMessage(senderJid, { text: "👑 *Owner Dashboard*\n\nYou have full access to the system." }, { quoted: msg });
     }
 };

@@ -2,13 +2,13 @@
  * Leaves Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'leaves',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create leaves text effect',
   usage: '.leaves <text>',
   

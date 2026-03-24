@@ -2,13 +2,13 @@
  * Glitch Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'glitch',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create glitch text effect',
   usage: '.glitch <text>',
   

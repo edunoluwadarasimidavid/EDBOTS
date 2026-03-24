@@ -2,13 +2,13 @@
  * Thunder Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'thunder',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create thunder text effect',
   usage: '.thunder <text>',
   

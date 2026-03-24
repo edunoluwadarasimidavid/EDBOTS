@@ -2,13 +2,13 @@
  * Ice Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'ice',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create ice text effect',
   usage: '.ice <text>',
   

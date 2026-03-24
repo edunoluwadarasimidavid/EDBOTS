@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f2027,50:203a43,100:2c5364&height=180&section=header&text=EDBOTS+V2&fontSize=50&fontColor=ffffff&animation=fadeIn&fontAlignY=35"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f2027,50:203a43,100:2c5364&height=180&section=header&text=EDBOTS+V3+PRO&fontSize=50&fontColor=ffffff&animation=fadeIn&fontAlignY=35"/>
 
-# 🤖 EDBOTS: The Industrial-Grade WhatsApp Framework
+# 🤖 EDBOTS V3: The Industrial-Grade WhatsApp Framework
 ### Advanced • Secure • Modular • Terminal-Optimized
 
 <br/>
@@ -18,140 +18,161 @@
 
 # 🌍 Overview
 
-**EDBOTS** is a high-performance, terminal-based WhatsApp automation framework built on the **Baileys Multi-Device (MD)** library. Unlike standard bots, EDBOTS is engineered with a **Security-First** approach, featuring a protected core, recursive command loading, and a sandboxed execution environment.
-
-This project is designed for developers who need a stable, scalable, and tamper-proof foundation for WhatsApp automation.
+**EDBOTS V3** is a high-performance, terminal-based WhatsApp automation framework built on the **Baileys Multi-Device (MD)** library. This version represents a significant upgrade from previous iterations, focusing on stability, speed, and uncompromising security.
 
 ---
 
-# 🛡️ Core Security Features
+# 🚀 Latest Improvements (March 2026)
 
-EDBOTS implements several layers of protection to ensure system integrity and developer attribution:
+The framework has been recently optimized for maximum reliability and ease of use:
 
-- **Immutable Developer Metadata:** Core developer information (Name, Email, Repository) is hard-coded and **Object-Frozen**. It cannot be modified at runtime.
-- **Runtime Integrity Check:** On startup, the system performs a self-audit. If the developer metadata is missing or altered, the bot immediately terminates execution.
-- **Sandboxed Command Execution:** Every command runs inside an isolated `try/catch` block. A failure in one command (e.g., a network error or syntax mistake in a plugin) will **never** crash the entire bot.
-- **Pre-Flight Environment Setup:** Automatically detects and creates missing directories (`session`, `commands`, `temp`) to ensure zero-config first runs.
-- **Global Process Safety:** Listeners for `uncaughtException` and `unhandledRejection` prevent "silent deaths" and ensure the bot remains online even during unexpected system-level errors.
+- **High-Grade Update System**: 
+    - **Non-Git Update Mechanism**: Downloads the entire repository as a ZIP archive, extracts it, and updates all system files automatically.
+    - **Session Protection**: Specifically designed to exclude the `session/` folder, ensuring authentication is never broken during updates.
+    - **Automatic Cleanup**: Clears temporary update cache immediately after completion.
+    - **Live Notification**: Sends a detailed success message to the WhatsApp owner account upon completion.
+- **High-Grade Anti-Ban System**: 
+    - **Account Warming**: Automatically introduces a "wake up" delay after long periods of inactivity to simulate human behavior.
+    - **Dynamic Typing Simulation**: Calculates typing duration based on response length (WPM simulation).
+    - **Smart Presence**: Uses `presenceObserve` and `sendPresenceUpdate` to mimic real user interaction before replying.
+    - **Global Rate Limiting**: Per-user and global message caps to prevent spam-triggered bans.
+- **Puter AI Integration**: Full support for `.auto-reply` using the Puter.js engine with localized instruction sets.
+- **Recursive Command Loader**: Commands are now loaded recursively from all subfolders within the `commands/` directory.
+- **Dynamic Menu System**: The `.menu` command is now fully dynamic, automatically categorizing all 111+ commands.
+- **Dependency-Free Stability**: Critical commands (Sticker, Take, Crop, Truth, etc.) refactored to remove unstable external dependencies.
+- **System-Native FFmpeg**: Media utilities now leverage the system's native FFmpeg for superior performance.
+
+---
+
+# 📚 Command List (111+ Total)
+
+### 🛡️ ADMIN
+- **antigroupmention**: Configure antigroupmention protection (delete/kick)
+- **antilink**: Configure antilink protection (delete/kick)
+- **antitag**: Configure anti-tag protection (tagall/hidetag)
+- **autosticker**: Enable or disable auto-sticker conversion
+- **clean**: Clean messages (all or from specific user)
+- **delete**: Delete a replied message
+- **demote**: Remove admin privileges from member
+- **goodbye**: Enable/disable goodbye messages
+- **grouplink**: Get group invite link
+- **hidetag**: Silently tag all members in the group
+- **kick**: Remove a participant from the group
+- **mute**: Close group (only admins can send messages)
+- **promote**: Promote member to admin
+- **resetwarn**: Reset all warnings for a user
+- **setgoodbye**: Set custom goodbye message
+- **setwelcome**: Set custom welcome message
+- **tagall**: Tag all group members
+- **unmute**: Open group (all members can send messages)
+- **warn**: Warn a user
+- **welcome**: Enable/disable welcome messages
+
+### 🧠 AI & AUTOMATION
+- **ai**: Chat with AI (ChatGPT-style)
+- **imagine**: Generate AI art from text prompt
+- **auto-reply**: Enable/disable AI auto-reply system
+
+### 🎮 FUN & GAMES
+- **truth**: Get a random truth question
+- **dare**: Get a random dare challenge
+- **joke**: Get random joke
+- **meme**: Get random memes
+- **memesearch**: Search and get memes/gifs
+- **ship**: Ship two users randomly
+- **gayrate**: Playful gay percentage check
+- **insult**: Give a silly insult to a user
+- **compliment**: Get a random compliment
+- **flirt**: Get a random flirty pickup line
+- **pies**: Get random pies images by country
+
+### 🎨 TEXT & MEDIA
+- **sticker**: Convert image or video to sticker
+- **crop**: Convert image to cropped sticker
+- **take**: Steal a sticker and change its packname
+- **simage**: Convert sticker to image (PNG) or video (MP4)
+- **attp**: Create animated text sticker
+- **tts**: Convert text to speech (TTS-Nova)
+- **1917, arena, blackpink, devil, fire, glitch, hacker, ice, impressive, leaves, light, matrix, metallic, neon, purple, sand, snow, thunder**: Advanced text effects
+
+### 📥 DOWNLOADER
+- **song**: Download audio from YouTube
+- **ytvideo**: Download video from YouTube
+- **tiktok**: Download TikTok videos
+- **lyrics**: Get lyrics of a song
+- **facebook**: Download Facebook videos (Currently undergoing maintenance)
+- **instagram**: Download Instagram posts/reels (Currently undergoing maintenance)
+- **igs**: Download Instagram Stories (Currently undergoing maintenance)
+
+### 🛠️ UTILITIES
+- **weather**: Get weather for a city
+- **translate**: Translate text to different languages
+- **calc**: Calculate math expressions
+- **qr**: Generate QR code from text
+- **ssweb**: Take a screenshot of a website
+- **ping**: Check system latency
+- **uptime**: Show how long the bot has been running
+- **botinfo**: Display information about the bot
+- **groupinfo**: Show group information
+- **groupstats**: Show today's group chat statistics
+- **myactivity**: Check your personal activity stats
+
+### 🔞 ANIME (SFW/NSFW)
+- **waifu, neko, konachan, random**: SFW Anime images
+- **hwaifu, hneko, loli, megumin, milf**: NSFW Anime images (Requires appropriate permissions)
+
+### 👑 OWNER ONLY
+- **mode**: Toggle between Public/Self mode
+- **prefix**: Change the bot global prefix
+- **broadcast**: Send message to all chats
+- **block/unblock**: Manage blocked users
+- **setbotname/setbotpp**: Customize bot identity
+- **restart/update**: System maintenance and updates
+
+---
+
+# 🛡️ Advanced Anti-Tamper & Security
+
+EDBOTS V3 is built with a multi-layered security architecture:
+
+- **Integrated Anti-Tamper System:** Active monitoring for critical file modifications.
+- **Immutable Developer Metadata:** Cryptographically verified identities.
+- **Runtime Integrity Audit:** Exhaustive self-audit on every startup.
+- **Secure Sandboxed Execution:** Hardened environment for command execution.
+- **Global Error Shielding:** Prevents crashes from unexpected errors.
 
 ---
 
 # 🏗️ Modular Architecture
 
-The project follows a clean, decoupled structure for maximum scalability:
-
 ```text
 edbots/
-├── core/
-│   ├── developer.js     # [PROTECTED] Hard-coded metadata & integrity logic
-│   ├── engine.js        # [ENGINE] Baileys connection & recursive loader
-│   └── permissions.js   # [SECURITY] Global owner/admin verification
-├── config/
-│   └── settings.js      # [CONFIG] User-editable bot & owner settings
-├── commands/            # [MODULES] Recursive command directory
-│   ├── general/         # Public commands (menu, ping, etc.)
-│   ├── admin/           # Group moderation (kick, promote)
-│   └── owner/           # System-level commands (restart, update)
-├── session/             # [DATA] Multi-file authentication storage
-├── temp/                # [DATA] Temporary media buffer
-├── index.js             # [ENTRY] Secure system initialization
-└── package.json         # [MANIFEST] Dependency management
+├── core/                # [ENGINE] Optimized Baileys connection and routing
+├── commands/            # [MODULES] 111+ Categorized commands in subfolders
+├── config/              # [CONFIG] User-editable bot preferences
+├── utils/               # [HELPERS] Reusable system and media utilities
+├── data/                # [DATA] Dynamic command metadata and overrides
+├── session/             # [DATA] Encrypted authentication storage
+└── index.js             # [ENTRY] Secure initialization point
 ```
 
 ---
 
-# 🚀 Technical Capabilities
+# 👨‍💻 Developer & Support
 
-### 1. Recursive Command Loading
-The engine automatically scans the `commands/` directory and **all its subdirectories**. This allows you to organize hundreds of commands into clean categories without manual imports.
-
-### 2. Advanced Message Parsing
-The built-in parser extracts text and commands from:
-- Standard text messages
-- Image/Video captions
-- Quoted messages
-- Button responses
-- List selections
-
-### 3. Professional CLI Experience
-- **Startup Banner:** Displays bot name, developer info, and connection status.
-- **Color-Coded Logs:** Real-time terminal logging for execution (`EXEC`), errors (`ERROR`), and connection updates (`CONNECTION`).
-- **Memory Management:** Includes commands to monitor RAM usage and system latency.
-
----
-
-# 🛠️ Installation & Setup
-
-### Prerequisites
-- [Node.js](https://nodejs.org/) (Version 18.0.0 or higher)
-- [Git](https://git-scm.com/)
-- A WhatsApp account for linking
-
-### Step-by-Step Installation
-1. **Clone the Project:**
-   ```bash
-   git clone https://github.com/edunoluwadarasimidavid/EDBOTS.git
-   cd EDBOTS
-   ```
-
-2. **Install Dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Configure the Bot:**
-   Edit `config/settings.js` to set your owner number and preferred bot name.
-   ```bash
-   nano config/settings.js
-   ```
-
-4. **Launch EDBOTS:**
-   ```bash
-   npm start
-   ```
-
-5. **Link Account:** Scan the QR code displayed in your terminal using WhatsApp → Linked Devices.
-
----
-
-# 🧩 Adding New Commands
-
-EDBOTS makes it easy to add features. Create a `.js` file anywhere inside the `commands/` folder using this template:
-
-```javascript
-/**
- * @file example.js
- */
-module.exports = {
-    name: "hello",             // Command trigger
-    aliases: ["hi", "hey"],     // Optional shortcuts
-    async execute(sock, msg, args) {
-        const jid = msg.key.remoteJid;
-        await sock.sendMessage(jid, { text: "Hello! EDBOTS is working." });
-    }
-};
-```
-
----
-
-# 👨‍💻 Developer Information
-
-- **Developer:** Edun Oluwadarasimi David
+- **Lead Developer:** Edun Oluwadarasimi David
 - **Email:** [davidedun2010@gmail.com](mailto:davidedun2010@gmail.com)
-- **Repository:** [GitHub: EDBOTS](https://github.com/edunoluwadarasimidavid/EDBOTS.git)
-
-> **Note:** Modification of developer metadata in `core/developer.js` is strictly prohibited by the system's integrity engine.
 
 ---
 
 # 📜 License
 
-This project is licensed under the **MIT License**.
+This software is **Proprietary and Private**. Unauthorized redistribution, modification, or reverse engineering of this software is strictly prohibited. All rights reserved by the original developer.
 
 <div align="center">
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:2c5364,50:203a43,100:0f2027&height=120&section=footer"/>
 
-### Built with Precision • Refactored for Excellence • Powered by Baileys MD
+### Built with Precision • Hardened for Security • Powered by Baileys MD
 
 </div>

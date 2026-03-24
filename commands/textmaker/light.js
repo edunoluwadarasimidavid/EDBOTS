@@ -2,13 +2,13 @@
  * Light Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'light',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create light text effect',
   usage: '.light <text>',
   

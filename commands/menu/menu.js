@@ -1,119 +1,85 @@
-const { readJson } = require('../../utils/safeJson');
 const { getFormattedUptime } = require('../../utils/uptime');
-const path = require('path');
-
-const BOT_CONFIG = path.join(__dirname, '../../config/bot.json');
-const OWNER_MENU_OVERRIDE = path.join(__dirname, '../../data/ownerMenu.json');
+const config = require('../../config');
 
 module.exports = {
     name: 'menu',
-    description: 'Displays the bot dashboard and command list',
+    description: 'Displays the dynamic command menu',
     category: 'menu',
-    async execute(sock, msg, args, extra) {
+    aliases: ['help', 'h'],
+    async execute(sock, msg, args, context) {
         try {
-            // Load dynamic config
-            const bot = await readJson(BOT_CONFIG, {
-                version: "v1.0.6",
-                prefix: ".",
-                owner: "Edun Oluwadarasimi David"
-            });
+            const { commands, reply, prefix } = context;
+            const uptime = getFormattedUptime();
+            const botName = config.botName || 'EDBOTS';
+            const ownerName = Array.isArray(config.ownerName) ? config.ownerName[0] : config.ownerName;
 
-            // Try loading custom menu override
-            const override = await readJson(OWNER_MENU_OVERRIDE, null);
-            if (override && override.menu) {
-                return await extra.reply(override.menu);
+            // Handle Help for specific command
+            if (args[0]) {
+                const cmd = commands.get(args[0].toLowerCase());
+                if (cmd) {
+                    let helpText = `╭─╼─≪ *COMMAND HELP* ≫─╼─╮\n`;
+                    helpText += `│ 🏷️ *Name:* ${cmd.name}\n`;
+                    helpText += `│ 📚 *Description:* ${cmd.description || cmd.desc || 'No description'}\n`;
+                    helpText += `│ 📂 *Category:* ${cmd.category || 'general'}\n`;
+                    if (cmd.aliases && cmd.aliases.length > 0) {
+                        helpText += `│ 🔗 *Aliases:* ${cmd.aliases.join(', ')}\n`;
+                    }
+                    if (cmd.usage) {
+                        helpText += `│ ⌨️ *Usage:* ${prefix}${cmd.name} ${cmd.usage}\n`;
+                    }
+                    helpText += `╰╼━━━━━━━━━━━━━━━╾╯`;
+                    return await reply(helpText);
+                }
             }
 
-            const uptime = getFormattedUptime();
-            const { owner, prefix, version } = bot;
+            // Group unique commands by category
+            const categories = {};
+            const uniqueCommands = new Set(commands.values());
 
-            const menuText = `╭─╼─≪ *EDBOTS* ≫─╼─╮
-│ 🤖 *User:* ${owner}
+            uniqueCommands.forEach((cmd) => {
+                const cat = cmd.category || 'general';
+                if (!categories[cat]) categories[cat] = [];
+                categories[cat].push(cmd.name);
+            });
+
+            let menuText = `╭─╼─≪ *${botName.toUpperCase()}* ≫─╼─╮
+│ 🤖 *Owner:* ${ownerName}
 │ ⏱️ *Uptime:* ${uptime}
 │ 👑 *Prefix:* [ ${prefix} ]
-│ ⚙️ *Version:* ${version}
-╰╼━━━━━━━━━━━━━━━╾╯
+│ ⚙️ *Version:* 1.1.0
+╰╼━━━━━━━━━━━━━━━╾╯\n\n`;
 
-╭╼━≪ 🧠 *AI & AUTOMATION* ≫━╾╮
-┃ • .edbot-ai
-┃ • ai:
-┃ • .auto-reply
-┃ • .magicstudio
-╰━━━━━━━━━━━━━━━╯
+            const sortedCategories = Object.keys(categories).sort();
 
-╭╼━≪ 🛡️ *ADMINISTRATION* ≫━╾╮
-┃ • .kick
-┃ • .promote
-┃ • .mute
-┃ • .unmute
-┃ • .hidetag
-┃ • .tagall
-┃ • .antilink
-┃ • .antitag
-┃ • .welcome
-┃ • .goodbye
-╰━━━━━━━━━━━━━━━╯
+            sortedCategories.forEach(cat => {
+                menuText += `╭╼━≪ 🌟 *${cat.toUpperCase()}* ≫━╾╮\n`;
+                // Sort command names within category
+                categories[cat].sort().forEach(cmdName => {
+                    menuText += `┃ • ${prefix}${cmdName}\n`;
+                });
+                menuText += `╰━━━━━━━━━━━━━━━╯\n\n`;
+            });
 
-╭╼━≪ 🎮 *ENTERTAINMENT* ≫━╾╮
-┃ • .joke
-┃ • .meme
-┃ • .ship
-┃ • .truth
-┃ • .dare
-┃ • .gayrate
-┃ • .waifu
-┃ • .neko
-╰━━━━━━━━━━━━━━━╯
+            menuText += `> *Type ${prefix}help <command> for details*\n\n`;
+            menuText += `*© 2026 EDBOTS Framework*`;
 
-╭╼━≪ 📥 *DOWNLOADER* ≫━╾╮
-┃ • .song
-┃ • .video
-┃ • .lyrics
-┃ • .tiktok
-┃ • .ig
-┃ • .fb
-┃ • .ytsearch
-┃ • .play
-╰━━━━━━━━━━━━━━━╯
+            await sock.sendMessage(msg.key.remoteJid, { 
+                text: menuText.trim(),
+                contextInfo: {
+                    externalAdReply: {
+                        title: `${botName} Assistant`,
+                        body: `Dynamic Command System Active`,
+                        thumbnailUrl: "https://github.com/edunoluwadarasimidavid.png",
+                        sourceUrl: config.social?.github || "",
+                        mediaType: 1,
+                        renderLargerThumbnail: true
+                    }
+                }
+            }, { quoted: msg });
 
-╭╼━≪ 🎨 *TEXT & MEDIA* ≫━╾╮
-┃ • .sticker
-┃ • .attp
-┃ • .tts
-┃ • .carbon
-┃ • .neon
-┃ • .fire
-┃ • .glitch
-╰━━━━━━━━━━━━━━━╯
-
-╭╼━≪ 🛠️ *UTILITIES* ≫━╾╮
-┃ • .weather
-┃ • .translate
-┃ • .calc
-┃ • .ssweb
-┃ • .qr
-┃ • .ping
-┃ • .uptime
-┃ • .info
-╰━━━━━━━━━━━━━━━╯
-
-╭╼━≪ 👑 *OWNER ONLY* ≫━╾╮
-┃ • .broadcast
-┃ • .block
-┃ • .setprefix
-┃ • .setbotpp
-┃ • .restart
-┃ • .update
-╰━━━━━━━━━━━━━━━╯
-
-> *Type .help <command> for details*
-
-*© 2026 EDBOTS Framework*
-_Powered by Edun Oluwadarasimi_`.trim();
-
-            await sock.sendMessage(msg.key.remoteJid, { text: menuText }, { quoted: msg });
         } catch (error) {
             console.error('[Menu Error]', error);
+            context.reply('❌ Failed to generate menu.');
         }
     }
 };

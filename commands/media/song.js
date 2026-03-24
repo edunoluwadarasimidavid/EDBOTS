@@ -55,102 +55,45 @@ module.exports = {
         caption: `🎵 Downloading: *${video.title}*\n⏱ Duration: ${video.timestamp}`
       }, { quoted: msg });
       
-      // Try multiple APIs with fallback chain
-      let audioData;
+      // Modernized approach: Local ytdl fallback -> External APIs
       let audioBuffer;
+      let audioData = { title: video.title };
       let downloadSuccess = false;
-      
-      // List of API methods to try
-      const apiMethods = [
-        { name: 'EliteProTech', method: () => APIs.getEliteProTechDownloadByUrl(video.url) },
-        { name: 'Yupra', method: () => APIs.getYupraDownloadByUrl(video.url) },
-        { name: 'Okatsu', method: () => APIs.getOkatsuDownloadByUrl(video.url) },
-        { name: 'Izumi', method: () => APIs.getIzumiDownloadByUrl(video.url) }
-      ];
-      
-      // Try each API until we successfully download audio
-      for (const apiMethod of apiMethods) {
-        try {
-          audioData = await apiMethod.method();
-          const audioUrl = audioData.download || audioData.dl || audioData.url;
+
+      // 1. Try local ytdl first (most stable if not IP banned)
+      try {
+          const localAudio = await APIs.getYoutubeAudio(video.url);
+          audioBuffer = localAudio.buffer;
+          audioData.title = localAudio.title;
+          downloadSuccess = true;
+          console.log('[SONG] Downloaded via local ytdl-core');
+      } catch (localErr) {
+          console.warn('[SONG] Local ytdl failed, trying external APIs...', localErr.message);
           
-          if (!audioUrl) {
-            console.log(`${apiMethod.name} returned no download URL, trying next API...`);
-            continue; // Try next API
-          }
+          // 2. Fallback to existing API chain if local fails
+          const apiMethods = [
+            { name: 'EliteProTech', method: () => APIs.getEliteProTechDownloadByUrl?.(video.url) },
+            { name: 'Yupra', method: () => APIs.getYupraDownloadByUrl?.(video.url) }
+          ].filter(a => typeof a.method === 'function');
           
-          // Try to download the audio file - arraybuffer first
-          try {
-            const audioResponse = await axios.get(audioUrl, {
-              responseType: 'arraybuffer',
-              timeout: 90000,
-              maxContentLength: Infinity,
-              maxBodyLength: Infinity,
-              decompress: true,
-              validateStatus: s => s >= 200 && s < 400,
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Encoding': 'identity'
-              }
-            });
-            audioBuffer = Buffer.from(audioResponse.data);
-            
-            // Validate buffer
-            if (audioBuffer && audioBuffer.length > 0) {
-              downloadSuccess = true;
-              break; // Success! Exit the loop
-            }
-          } catch (downloadErr) {
-            // Check if it's a 451 error or other client/server error
-            const statusCode = downloadErr.response?.status || downloadErr.status;
-            if (statusCode === 451) {
-              console.log(`Download blocked (451) from ${apiMethod.name}, trying next API...`);
-              continue; // Try next API
-            }
-            
-            // Try stream mode as fallback for this URL
+          for (const apiMethod of apiMethods) {
             try {
-              const audioResponse = await axios.get(audioUrl, {
-                responseType: 'stream',
-                timeout: 90000,
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity,
-                validateStatus: s => s >= 200 && s < 400,
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                  'Accept': '*/*',
-                  'Accept-Encoding': 'identity'
-                }
-              });
-              const chunks = [];
-              await new Promise((resolve, reject) => {
-                audioResponse.data.on('data', c => chunks.push(c));
-                audioResponse.data.on('end', resolve);
-                audioResponse.data.on('error', reject);
-              });
-              audioBuffer = Buffer.concat(chunks);
+              const res = await apiMethod.method();
+              const url = res?.download || res?.dl || res?.url;
+              if (!url) continue;
               
-              if (audioBuffer && audioBuffer.length > 0) {
+              const audioResponse = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000 });
+              audioBuffer = Buffer.from(audioResponse.data);
+              if (audioBuffer.length > 0) {
                 downloadSuccess = true;
-                break; // Success! Exit the loop
+                break;
               }
-            } catch (streamErr) {
-              // Stream mode also failed, try next API
-              const streamStatusCode = streamErr.response?.status || streamErr.status;
-              if (streamStatusCode === 451) {
-                console.log(`Stream download blocked (451) from ${apiMethod.name}, trying next API...`);
-              } else {
-                console.log(`Stream download failed from ${apiMethod.name}:`, streamErr.message);
-              }
-              continue; // Try next API
-            }
+            } catch (e) { continue; }
           }
-        } catch (apiErr) {
-          // API call failed, try next API
-          console.log(`${apiMethod.name} API failed:`, apiErr.message);
-          continue;
-        }
+      }
+      
+      if (!downloadSuccess || !audioBuffer) {
+        throw new Error('All download sources failed.');
       }
       
       // If all APIs failed, throw error

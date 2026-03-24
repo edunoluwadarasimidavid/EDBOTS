@@ -2,13 +2,13 @@
  * Metallic Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'metallic',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create metallic text effect',
   usage: '.metallic <text>',
   

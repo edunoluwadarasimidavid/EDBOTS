@@ -2,13 +2,13 @@
  * Neon Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'neon',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create neon text effect',
   usage: '.neon <text>',
   

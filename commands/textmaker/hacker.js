@@ -2,13 +2,13 @@
  * Hacker Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'hacker',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create hacker text effect',
   usage: '.hacker <text>',
   

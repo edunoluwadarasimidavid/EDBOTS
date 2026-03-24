@@ -2,13 +2,13 @@
  * 1917 Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: '1917',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create 1917 style text effect',
   usage: '.1917 <text>',
   

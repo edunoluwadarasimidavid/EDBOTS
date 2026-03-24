@@ -1,9 +1,20 @@
-/**
- * Truth - Get a random truth question from @bochilteam/scraper (translated to English)
- */
-
-const { truth } = require('@bochilteam/scraper');
-const { translate } = require('@vitalets/google-translate-api');
+const TRUTH_QUESTIONS = [
+    "What is your biggest fear?",
+    "What is your most embarrassing moment?",
+    "Have you ever lied to your best friend?",
+    "Who is your secret crush?",
+    "What is the worst gift you have ever received?",
+    "If you could change one thing about yourself, what would it be?",
+    "Have you ever cheated on a test?",
+    "What is your guilty pleasure?",
+    "Who was your first love?",
+    "What is the most trouble you've ever been in?",
+    "Have you ever ghosted someone?",
+    "What is a secret you’ve never told anyone?",
+    "If you could date anyone in this group, who would it be?",
+    "What is the most expensive thing you've bought?",
+    "Have you ever stalked someone on social media?"
+];
 
 module.exports = {
     name: 'truth',
@@ -12,18 +23,7 @@ module.exports = {
     desc: 'Get a random truth question',
     usage: 'truth',
     execute: async (sock, msg, args, extra) => {
-      try {
-        const question = await truth();
-        
-        // Translate to English
-        const res = await translate(question, { to: 'en' });
-        
-        await extra.reply(res.text);
-        
-      } catch (error) {
-        console.error('Truth Error:', error);
-        await extra.reply(`❌ Error: ${error.message}`);
-      }
+        const question = TRUTH_QUESTIONS[Math.floor(Math.random() * TRUTH_QUESTIONS.length)];
+        await extra.reply(`🗣️ *TRUTH*\n\n${question}`);
     }
-  };
-  
+};

@@ -5,20 +5,7 @@ const MENU_PATH = path.join(__dirname, '..', '..', 'data', 'ownerMenu.json');
 
 module.exports = {
     handleGreeting: async (sock, msg) => {
-        let menuContent = "Hello 👋
-
-Welcome to ED BOT AI.
-
-Ask any question using:
-
-ai: your question
-
-Example:
-ai: what is programming
-
-Commands:
-menu – show bot commands
-help – get help";
+        let menuContent = "Hello 👋\n\nWelcome to ED BOT AI.\n\nAsk any question using:\n\nai: your question\n\nExample:\nai: what is programming\n\nCommands:\nmenu – show bot commands\nhelp – get help";
         
         try {
             if (fs.existsSync(MENU_PATH)) {

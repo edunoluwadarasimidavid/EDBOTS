@@ -2,13 +2,13 @@
  * Matrix Text Effect
  */
 
-const mumaker = require('mumaker');
+const mumaker = require('../../utils/textmaker');
 const config = require('../../config');
 
 module.exports = {
   name: 'matrix',
   aliases: [],
-  category: 'textmaker',
+  category: 'Textmaker',
   description: 'Create matrix text effect',
   usage: '.matrix <text>',
   
