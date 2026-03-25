@@ -37,6 +37,12 @@ module.exports = {
             const uniqueCommands = new Set(commands.values());
 
             uniqueCommands.forEach((cmd) => {
+                // Filter ownerOnly commands
+                if (cmd.ownerOnly && !context.isOwner) return;
+                
+                // Filter groupOnly commands if not in group (optional, but requested for cleanup)
+                if (cmd.groupOnly && !context.isGroup) return;
+
                 const cat = cmd.category || 'general';
                 if (!categories[cat]) categories[cat] = [];
                 categories[cat].push(cmd.name);

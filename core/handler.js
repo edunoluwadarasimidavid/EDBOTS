@@ -26,6 +26,10 @@ const getMessageContent = (msg) => {
     if (m.viewOnceMessageV2Extension) m = m.viewOnceMessageV2Extension.message;
     if (m.viewOnceMessage) m = m.viewOnceMessage.message;
     if (m.documentWithCaptionMessage) m = m.documentWithCaptionMessage.message;
+    if (m.buttonsMessage) m = m.buttonsMessage;
+    if (m.listMessage) m = m.listMessage;
+    if (m.templateMessage) m = m.templateMessage;
+    if (m.interactiveMessage) m = m.interactiveMessage;
     
     return m;
 };
@@ -57,11 +61,12 @@ const normalizeNumber = (jid) => {
 /**
  * Checks if sender is owner
  */
-const isOwner = (sender) => {
+const isOwner = (sock, sender) => {
     if (!sender) return false;
     const senderNumber = normalizeNumber(sender.split('@')[0]);
+    const botNumber = normalizeNumber(sock.user.id.split(':')[0]);
     const owners = (config.owner || []).map(owner => normalizeNumber(owner));
-    return owners.includes(senderNumber);
+    return owners.includes(senderNumber) || senderNumber === botNumber;
 };
 
 /**
@@ -100,26 +105,53 @@ const handleMessage = async (sock, msg, commands) => {
         const content = getMessageContent(msg);
         if (!content) return;
 
-        const sender = msg.key.fromMe ? (sock.user.id.split(':')[0] + '@s.whatsapp.net') : (msg.key.participant || from);
+        const fromMe = msg.key.fromMe;
+        const sender = fromMe ? (sock.user.id.split(':')[0] + '@s.whatsapp.net') : (msg.key.participant || from);
         const isGroup = from.endsWith('@g.us');
         const groupMetadata = isGroup ? await getGroupMetadata(sock, from) : null;
 
-        let body = content.conversation || content.extendedTextMessage?.text || content.imageMessage?.caption || content.videoMessage?.caption || '';
-        body = body.trim();
+        // Enhanced Body Extraction
+        let body = (
+            content.conversation || 
+            content.extendedTextMessage?.text || 
+            content.imageMessage?.caption || 
+            content.videoMessage?.caption || 
+            content.buttonsResponseMessage?.selectedButtonId || 
+            content.listResponseMessage?.singleSelectReply?.selectedRowId || 
+            content.templateButtonReplyMessage?.selectedId ||
+            content.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson ||
+            ''
+        ).trim();
         
         const isReply = !!(content.extendedTextMessage?.contextInfo?.quotedMessage);
         
-        // Anti-Ban: Determine if we should respond
+        // Privilege calculation
+        const ownerStatus = isOwner(sock, sender);
+        const adminStatus = isGroup ? await isAdmin(sock, sender, from, groupMetadata) : false;
+        const isPrivileged = ownerStatus || adminStatus;
+
+        // Command detection
         const prefix = config.prefix || '.';
         const isCmd = body.startsWith(prefix);
-        if (!(await antiBan.shouldRespond(from, isCmd))) return;
+        const commandName = isCmd ? body.slice(prefix.length).trim().split(/\s+/)[0].toLowerCase() : null;
+
+        // Safe Debug Logs
+        if (isCmd || config.debug) {
+            console.log(`[MSG] From: ${sender} | Group: ${isGroup} | fromMe: ${fromMe} | Cmd: ${commandName || 'None'}`);
+        }
+
+        // Anti-Ban: Determine if we should respond
+        if (!(await antiBan.shouldRespond(from, isCmd, isPrivileged))) return;
+
+        // selfMode check: If true, only owner/sudo can use commands
+        if (config.selfMode && !ownerStatus && isCmd) return;
 
         if (!body && !isReply) return;
 
         const context = {
             from, sender, isGroup, groupMetadata, body,
-            isOwner: isOwner(sender),
-            isAdmin: isGroup ? await isAdmin(sock, sender, from, groupMetadata) : false,
+            isOwner: ownerStatus,
+            isAdmin: adminStatus,
             isBotAdmin: isGroup ? await isBotAdmin(sock, from, groupMetadata) : false,
             commands,
             prefix,
@@ -135,12 +167,8 @@ const handleMessage = async (sock, msg, commands) => {
         }
 
         // Command Processing
-        if (isCmd) {
-            const args = body.slice(prefix.length).trim().split(/\s+/);
-            const commandName = args.shift().toLowerCase();
-
-            if (!commandName) return;
-
+        if (isCmd && commandName) {
+            const args = body.slice(prefix.length).trim().split(/\s+/).slice(1);
             const command = commands.get(commandName);
             
             if (command) {
@@ -170,11 +198,14 @@ const handleMessage = async (sock, msg, commands) => {
             }
         }
 
-        // Global AI Auto Reply (Private chats only to avoid ban)
-        if (config.autoReply && !isGroup && !msg.key.fromMe && !isCmd) {
-            const answer = await askAI(body);
-            if (answer && answer !== "NOT_CONNECTED") {
-                return await context.reply(answer);
+        // Global AI Auto Reply (Private chats only to avoid ban, except self-chat)
+        if (config.autoReply && !isGroup && !isCmd) {
+            // Only auto-reply if not from me, OR if from me but explicitly asked (though usually we don't auto-reply to ourselves)
+            if (!fromMe) {
+                const answer = await askAI(body);
+                if (answer && answer !== "NOT_CONNECTED") {
+                    return await context.reply(answer);
+                }
             }
         }
 

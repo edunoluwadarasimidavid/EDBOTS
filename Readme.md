@@ -31,6 +31,11 @@ The framework has been recently optimized for maximum reliability and ease of us
     - **Session Protection**: Specifically designed to exclude the `session/` folder, ensuring authentication is never broken during updates.
     - **Automatic Cleanup**: Clears temporary update cache immediately after completion.
     - **Live Notification**: Sends a detailed success message to the WhatsApp owner account upon completion.
+- **Enhanced Message & Context Engine**:
+    - **Robust Extraction**: Full support for buttons, lists, template replies, and interactive messages.
+    - **Self-Chat & DM Optimization**: Seamless command execution in self-chats and private messages for bot owners.
+    - **Intelligent Dynamic Menu**: Context-aware command filtering that hides owner-only and group-only commands based on user permissions and chat type.
+    - **Advanced Security Mode**: Integrated `selfMode` for toggling between public and private operation with one command.
 - **High-Grade Anti-Ban System**: 
     - **Account Warming**: Automatically introduces a "wake up" delay after long periods of inactivity to simulate human behavior.
     - **Dynamic Typing Simulation**: Calculates typing duration based on response length (WPM simulation).
@@ -143,6 +148,28 @@ EDBOTS V3 is built with a multi-layered security architecture:
 
 ---
 
+# 🛠️ Installation & Setup
+
+Follow these steps to get **EDBOT AI** running on your environment (Termux, Linux, or Windows):
+
+### 1. Install Dependencies
+Ensure you have **Node.js 18+** and **FFmpeg** installed on your system.
+```bash
+npm install
+```
+
+### 2. Configuration
+- Edit `config.js` to set your owner numbers and bot preferences.
+- Create a `.env` file based on `.env.example` if you need to set environment-specific variables.
+
+### 3. Start the Bot
+```bash
+npm start
+```
+Upon the first run, you will be prompted to choose between **QR Code** or **Pairing Code** for authentication.
+
+---
+
 # 🏗️ Modular Architecture
 
 ```text
@@ -155,6 +182,32 @@ edbots/
 ├── session/             # [DATA] Encrypted authentication storage
 └── index.js             # [ENTRY] Secure initialization point
 ```
+
+---
+
+# ⚖️ Disclaimer
+
+**EDBOT AI** is an independent WhatsApp automation software developed by **Smart Tech Programming**.
+
+This project is **not affiliated with, endorsed by, sponsored by, or officially connected** to WhatsApp, Meta Platforms, Inc., or any of their subsidiaries or affiliates. WhatsApp and Meta are registered trademarks of their respective owners. All product names, logos, and brands are the property of their respective holders.
+
+EDBOT AI operates through user-authorized linked-device sessions and does not modify, reverse engineer, or distribute official WhatsApp source code. Users are solely responsible for how they use this software. EDBOT AI must not be used for spam, fraud, bulk unsolicited messaging, phishing, impersonation, or any unlawful activity.
+
+The developer assumes no responsibility for misuse, account restrictions, suspension, or damages resulting from improper use of this software.
+
+---
+
+# 🛡️ Responsible Usage Policy
+
+To reduce account risk and ensure safe automation:
+
+- **Avoid bulk or unsolicited messaging**
+- **Respect user privacy and consent**
+- **Use message delays and cooldowns**
+- **Avoid abusive automation in groups**
+- **Do not impersonate individuals, businesses, or official services**
+
+EDBOT AI is designed for controlled automation, productivity, and assistant-based workflows.
 
 ---
 
@@ -173,6 +226,7 @@ This software is **Proprietary and Private**. Unauthorized redistribution, modif
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:2c5364,50:203a43,100:0f2027&height=120&section=footer"/>
 
+### EDBOT AI • Independent Automation Tool • Not affiliated with WhatsApp or Meta
 ### Built with Precision • Hardened for Security • Powered by Baileys MD
 
 </div>

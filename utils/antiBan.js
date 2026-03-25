@@ -1,7 +1,7 @@
 /**
  * @file antiBan.js
  * @description High-Grade Anti-Ban System for EDBOTS.
- * Implements human behavior simulation, account warming, and smart rate limiting.
+ * Implements tiered rate limiting and human behavior simulation.
  */
 
 const config = require('../config');
@@ -11,16 +11,17 @@ class HighGradeAntiBan {
     constructor() {
         this.userState = new Map(); // JID -> { lastMessageTime, messageCount, lastResponseTime }
         this.globalLastMessageTime = 0;
-        this.isWarmingUp = false;
         this.sessionStartTime = Date.now();
         this.totalMessagesSent = 0;
     }
 
     /**
      * Determines if the bot should respond to a message.
-     * Implements strict rate limiting and spam protection.
+     * Tiered limits:
+     * - Privileged (Owner/Admin): 40 msgs/min (High safety)
+     * - Regular Users: 20 msgs/min (Standard safety)
      */
-    async shouldRespond(jid, isCmd = false) {
+    async shouldRespond(jid, isCmd = false, isPrivileged = false) {
         const now = Date.now();
         const state = this.userState.get(jid) || { lastMessageTime: 0, messageCount: 0, lastResponseTime: 0 };
 
@@ -29,14 +30,17 @@ class HighGradeAntiBan {
             state.messageCount = 0;
         }
 
-        // 2. User-level rate limit: Max 5 messages per minute
-        if (state.messageCount >= 5) {
-            console.warn(`[ANTI-BAN] Rate limit hit for ${jid}. Ignoring.`);
+        // 2. Tiered Rate Limiting
+        const limit = isPrivileged ? 40 : 20;
+
+        if (state.messageCount >= limit) {
+            console.warn(`[ANTI-BAN] Rate limit hit for ${jid} (${isPrivileged ? 'Privileged' : 'Regular'}). Ignoring.`);
             return false;
         }
 
-        // 3. Command-specific cooldown
-        if (isCmd && now - state.lastResponseTime < 3000) {
+        // 3. Command-specific cooldown: 1.2s for privileged, 2s for others
+        const cooldown = isPrivileged ? 1200 : 2000;
+        if (isCmd && now - state.lastResponseTime < cooldown) {
             return false;
         }
 
@@ -47,56 +51,42 @@ class HighGradeAntiBan {
     }
 
     /**
-     * Simulates human-like behavior based on response length and session state.
+     * Simulates human-like behavior.
      */
     async simulateHumanBehavior(sock, jid, responseText = "") {
         const now = Date.now();
         
-        // 1. Account Warming Logic: 
-        // If the bot hasn't sent a message in over 6 hours, it "wakes up" slowly.
+        // 1. Account Warming Logic
         const timeSinceLastGlobalMsg = now - this.globalLastMessageTime;
         const SIX_HOURS = 6 * 60 * 60 * 1000;
         
         if (timeSinceLastGlobalMsg > SIX_HOURS && this.globalLastMessageTime !== 0) {
-            console.log(`[ANTI-BAN] Account warming triggered after ${Math.round(timeSinceLastGlobalMsg/3600000)}h inactivity.`);
-            await delay(randomDelay(3000, 7000)); // Extra "wake up" delay
+            await delay(randomDelay(2000, 4000));
         }
 
         // 2. Presence Updates
         if (sock.presenceObserve) {
             await sock.presenceObserve(jid).catch(() => {});
         }
-        await delay(randomDelay(500, 1500));
+        await delay(randomDelay(300, 800));
         
-        // 3. Dynamic Typing Simulation:
-        // Humans type at roughly 40-60 words per minute.
-        // We simulate typing speed based on the length of the response.
+        // 3. Dynamic Typing Simulation
         const charCount = responseText.length || 20;
-        const baseTypingMs = Math.min(charCount * 50, 5000); // Max 5 seconds typing simulation
-        const randomTypingMs = Math.floor(Math.random() * 2000) + 1000; // 1-3s random base
-        const totalTypingMs = Math.max(2000, baseTypingMs + randomTypingMs);
+        const baseTypingMs = Math.min(charCount * 30, 4000); 
+        const randomTypingMs = Math.floor(Math.random() * 800) + 400; 
+        const totalTypingMs = Math.max(1000, baseTypingMs + randomTypingMs);
 
         await sock.sendPresenceUpdate('composing', jid);
         await delay(totalTypingMs);
         await sock.sendPresenceUpdate('paused', jid);
 
-        // 4. Update global state
+        // 4. Update state
         this.globalLastMessageTime = Date.now();
         this.totalMessagesSent++;
         
-        // Update user specific last response time
         const state = this.userState.get(jid) || { lastMessageTime: 0, messageCount: 0, lastResponseTime: 0 };
         state.lastResponseTime = Date.now();
         this.userState.set(jid, state);
-    }
-
-    /**
-     * Randomly simulate "Online" status during the day to look active,
-     * but avoid being online 24/7.
-     */
-    async syncPresence(sock) {
-        // Logic to occasionally set online status could go here
-        // For now we rely on presenceObserve during message handling.
     }
 }
 
