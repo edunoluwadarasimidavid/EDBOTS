@@ -171,7 +171,7 @@ const handleMessage = async (sock, msg, commands) => {
         // Anti-Ban: Determine if we should respond
         const adminStatus = isGroup ? await isAdmin(sock, senderRaw, from, groupMetadata) : false;
         const isPrivileged = ownerStatus ? 'owner' : adminStatus;
-        if (!(await antiBan.shouldRespond(from, isCmd, isPrivileged))) return;
+        if (!(await antiBan.shouldRespond(sock, from, isCmd, isPrivileged))) return;
 
         // selfMode check
         if (config.selfMode && !ownerStatus && isCmd) return;

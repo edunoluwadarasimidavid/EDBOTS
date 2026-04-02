@@ -12,20 +12,60 @@ const { ID, Query } = require('node-appwrite');
 const { PUBLIC_SERVER_URL } = require('../config/backendUrl');
 
 const FALLBACK_EMAIL = 'smarttechprogramming@gmail.com';
-const PLANS = {
-  weekly: { amount: 500, days: 7 },
-  monthly: { amount: 1500, days: 30 },
-  yearly: { amount: 15000, days: 365 }
+
+// ENTERPRISE PLAN CONFIGURATION
+const PLAN_CONFIG = {
+  free: { 
+    limit: 5, 
+    period: 'daily', 
+    description: 'Basic Access'
+  },
+  weekly: { 
+    limit: 20, 
+    period: 'monthly', 
+    amount: 500, 
+    days: 7,
+    description: 'Weekly Starter'
+  },
+  monthly: { 
+    limit: 60, 
+    period: 'monthly', 
+    amount: 1500, 
+    days: 30,
+    description: 'Pro Monthly'
+  },
+  yearly: { 
+    limit: 240, 
+    period: 'monthly', 
+    amount: 15000, 
+    days: 365,
+    description: 'Elite Yearly'
+  }
 };
 
-// Official Paystack IP Whitelist
-const PAYSTACK_IPS = ['52.31.139.75', '52.49.173.169', '52.214.14.220'];
+const WEBHOOK_EXPIRY_MS = 5 * 60 * 1000;
 
 /**
- * Helper to validate email
+ * INTERNAL: Verify Payment Integrity
  */
-const isValidEmail = (email) => {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).toLowerCase());
+const verifyPaymentIntegrity = (paystackData, targetUserId) => {
+  const { amount, metadata, status } = paystackData;
+  const { userId, plan } = metadata || {};
+
+  if (status !== 'success') return { valid: false, reason: 'Transaction status not successful' };
+  
+  if (userId !== targetUserId) {
+    console.error(`[AUDIT][SUSPICIOUS] Ownership Mismatch! Ref owner: ${userId}, Requester: ${targetUserId}`);
+    return { valid: false, reason: 'Reference ownership mismatch' };
+  }
+
+  const expectedAmount = PLAN_CONFIG[plan]?.amount * 100;
+  if (!expectedAmount || amount < expectedAmount) {
+    console.error(`[AUDIT][SUSPICIOUS] Amount Underpaid! Expected: ${expectedAmount}, Paid: ${amount}`);
+    return { valid: false, reason: 'Payment amount mismatch' };
+  }
+
+  return { valid: true, plan, userId, amount: amount / 100 };
 };
 
 /**
@@ -33,42 +73,23 @@ const isValidEmail = (email) => {
  */
 const createPayment = async (req, res) => {
   try {
-    const { userId, plan } = req.body;
-    let { email } = req.body;
+    const { userId, plan, email: rawEmail } = req.body;
+    const email = (rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) ? rawEmail : FALLBACK_EMAIL;
 
-    if (!userId || !plan || !PLANS[plan]) {
+    if (!userId || !plan || !PLAN_CONFIG[plan]) {
       return res.status(400).json({ success: false, message: 'Invalid userId or plan' });
     }
 
-    if (!email || !isValidEmail(email)) {
-      email = FALLBACK_EMAIL;
-    }
-
-    const amount = PLANS[plan].amount * 100;
-    const metadata = { userId, plan };
-    
-    // Use PUBLIC_SERVER_URL for callback - no .env override allowed
-    const callback_url = `${PUBLIC_SERVER_URL}/payment/callback`;
-
-    console.log(`[PAYSTACK INIT] User: ${userId} | Email: ${email} | Plan: ${plan}`);
-    console.log(`[PAYSTACK INIT] Callback URL: ${callback_url}`);
-
-    const response = await initializePayment(email, amount, metadata);
+    const amount = PLAN_CONFIG[plan].amount * 100;
+    const response = await initializePayment(email, amount, { userId, plan });
 
     if (response && response.status) {
-      console.log(`[PAYSTACK INIT] Success | Ref: ${response.data.reference}`);
-      return res.json({ 
-        success: true, 
-        link: response.data.authorization_url, 
-        reference: response.data.reference,
-        callback_url: callback_url
-      });
-    } else {
-      console.error(`[PAYSTACK INIT] Failed: ${response.message || 'Unknown Error'}`);
-      return res.status(400).json({ success: false, message: 'Failed to initialize payment' });
+      console.log(`[AUDIT] Link Created | User: ${userId} | Ref: ${response.data.reference}`);
+      return res.json({ success: true, link: response.data.authorization_url, reference: response.data.reference });
     }
+    throw new Error(response.message || 'Paystack initialization failed');
   } catch (error) {
-    console.error(`[PAYSTACK INIT ERROR] ${error.message}`);
+    console.error(`[AUDIT ERROR] createPayment: ${error.message}`);
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 };
@@ -78,32 +99,26 @@ const createPayment = async (req, res) => {
  */
 const handleCallback = async (req, res) => {
   const reference = req.query.reference || req.query.trxref;
-  console.log(`[PAYSTACK CALLBACK] Received Ref: ${reference}`);
+  const userIdFromQuery = req.query.userId;
 
-  if (!reference) {
-    return res.status(400).send('<h1>Error: No reference provided</h1>');
-  }
+  if (!reference) return res.status(400).send('<h1>Missing Reference</h1>');
 
   try {
     const verification = await verifyTransaction(reference);
+    const integrity = verifyPaymentIntegrity(verification.data, userIdFromQuery || verification.data.metadata?.userId);
 
-    if (verification && verification.status && verification.data.status === 'success') {
-      const { userId, plan } = verification.data.metadata;
-      
-      const existingUser = await getPremiumUser(userId);
-      if (existingUser && existingUser.payment_reference === reference) {
-         return res.send('<h1>Success: Premium already activated for this reference.</h1>');
-      }
-
-      await activatePremium(userId, plan, reference, verification.data.amount / 100);
-      return res.send('<h1>Success! Your EDBOT Premium is now active.</h1>');
-    } else {
-      console.warn(`[PAYSTACK CALLBACK] Verification failed or pending for ${reference}`);
-      return res.send('<h1>Payment Verification Pending...</h1>');
+    if (!integrity.valid) {
+      return res.send(`<h1>Validation Failed: ${integrity.reason}</h1>`);
     }
+
+    const isProcessed = await checkReferenceProcessed(reference);
+    if (isProcessed) return res.send('<h1>Success: Premium already active.</h1>');
+
+    await activatePremium(integrity.userId, integrity.plan, reference, integrity.amount);
+    
+    return res.send(`<h1>✅ Success! Your EDBOT Premium is now active.</h1><p>You can return to WhatsApp.</p>`);
   } catch (error) {
-    console.error(`[PAYSTACK CALLBACK ERROR] ${error.message}`);
-    res.status(500).send('<h1>Internal Server Error</h1>');
+    res.status(500).send('<h1>Server Error</h1>');
   }
 };
 
@@ -112,83 +127,65 @@ const handleCallback = async (req, res) => {
  */
 const webhookHandler = async (req, res) => {
   try {
-    // 1. IP Whitelist Check (with Cloudflare support)
-    const clientIp = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip || req.connection.remoteAddress;
-    
-    // In production, uncomment the IP check for strict security
-    /*
-    if (!PAYSTACK_IPS.includes(clientIp)) {
-      console.warn(`[PAYSTACK WEBHOOK] Unauthorized IP Attempt: ${clientIp}`);
-      return res.status(403).send('Forbidden');
-    }
-    */
-
-    // 2. Signature Verification
-    if (!verifyPaystackSignature(req)) {
-      console.warn('[PAYSTACK WEBHOOK] Invalid Signature');
-      return res.status(401).send('Invalid signature');
-    }
+    if (!verifyPaystackSignature(req)) return res.status(401).send('Unauthorized');
 
     const event = req.body;
-    
-    // Store webhook log
-    try {
-      await databases.createDocument(databaseId, TABLES.webhook, ID.unique(), {
-        provider: 'paystack',
-        reference: event.data?.reference || 'N/A',
-        payload: JSON.stringify(event).slice(0, 65000),
-        status: event.event,
-        received_at: new Date().toISOString()
-      });
-    } catch (e) {
-      console.error(`[APPWRITE FAILURE] Table: ${TABLES.webhook} | Webhook logging failed: ${e.message}`);
-    }
+    const paidAt = new Date(event.data.paid_at || event.data.created_at).getTime();
+    if (Date.now() - paidAt > WEBHOOK_EXPIRY_MS) return res.status(200).send('OK');
 
     if (event.event === 'charge.success') {
       const { userId, plan } = event.data.metadata;
-      const reference = event.data.reference;
+      const integrity = verifyPaymentIntegrity(event.data, userId);
 
-      const existingUser = await getPremiumUser(userId);
-      if (existingUser && existingUser.payment_reference === reference) {
-        console.log(`[PAYSTACK WEBHOOK] Skipping: ${userId} already active for ${reference}`);
-        return res.status(200).send('OK');
-      }
+      if (!integrity.valid) return res.status(200).send('OK'); 
 
-      await activatePremium(userId, plan, reference, event.data.amount / 100);
-      console.log(`[PAYSTACK WEBHOOK] Premium activated for ${userId}`);
+      const isProcessed = await checkReferenceProcessed(event.data.reference);
+      if (isProcessed) return res.status(200).send('OK');
+
+      await activatePremium(integrity.userId, integrity.plan, event.data.reference, integrity.amount);
     }
 
     res.status(200).send('OK');
   } catch (error) {
-    console.error(`[PAYSTACK WEBHOOK ERROR] ${error.message}`);
     res.status(500).send('Internal Error');
   }
 };
 
 /**
- * Private: Activate Premium logic
+ * ATOMIC ACTIVATION
  */
-const activatePremium = async (userId, plan, reference, amount) => {
-  const days = PLANS[plan].days;
+async function activatePremium(userId, plan, reference, amount) {
+  const days = PLAN_CONFIG[plan].days;
   const expiryDate = new Date();
   expiryDate.setDate(expiryDate.getDate() + days);
-  
+  const expiryISO = expiryDate.toISOString();
   const licenseKey = `EDBOT-${plan.toUpperCase()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
-  await addPremiumUser(userId, plan, expiryDate.toISOString(), reference, licenseKey);
-
   try {
-    await databases.createDocument(databaseId, TABLES.licenses, ID.unique(), {
-      license_key: licenseKey,
+    // Update core subscription with notified: false to trigger bot notification
+    const table = TABLES.users;
+    const existingUsers = await databases.listDocuments(databaseId, table, [Query.equal('user_id', userId)]);
+
+    const data = {
+      user_id: userId,
       whatsapp_number: userId,
-      status: 'active',
-      bound_at: new Date().toISOString()
-    });
-  } catch (e) {
-    console.error(`[APPWRITE FAILURE] Table: ${TABLES.licenses} | Error: ${e.message}`);
-  }
+      plan: plan,
+      expires_at: expiryISO,
+      status: "active",
+      payment_reference: reference,
+      license_key: licenseKey,
+      messages_used: 0,
+      notified: false, // Critical: Bot will pick this up
+      last_reset: new Date().toISOString()
+    };
 
-  try {
+    if (existingUsers.total > 0) {
+      await databases.updateDocument(databaseId, table, existingUsers.documents[0].$id, data);
+    } else {
+      await databases.createDocument(databaseId, table, ID.unique(), data);
+    }
+
+    // Log Payment
     await databases.createDocument(databaseId, TABLES.payments, ID.unique(), {
       user_id: userId,
       reference: reference,
@@ -198,78 +195,98 @@ const activatePremium = async (userId, plan, reference, amount) => {
       provider: 'paystack',
       paid_at: new Date().toISOString()
     });
-  } catch (e) {
-    console.error(`[APPWRITE FAILURE] Table: ${TABLES.payments} | Error: ${e.message}`);
-  }
-};
 
-const checkPremiumStatus = async (req, res) => {
+    return { success: true, expiry: expiryISO };
+  } catch (error) {
+    console.error(`[CRITICAL] Activation failed: ${error.message}`);
+    throw error;
+  }
+}
+
+async function checkReferenceProcessed(reference) {
+  const result = await databases.listDocuments(databaseId, TABLES.payments, [Query.equal('reference', reference)]);
+  return result.total > 0;
+}
+
+/**
+ * 4. Premium Status & Usage Check (Used by bot before commands)
+ */
+const checkPremiumAndUsage = async (req, res) => {
   try {
     const { userId } = req.query;
-    if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+    if (!userId) return res.status(400).json({ success: false });
 
-    const user = await getPremiumUser(userId);
-    if (!user) return res.json({ isPremium: false });
-
+    let user = await getPremiumUser(userId);
     const now = new Date();
-    const expiry = new Date(user.expires_at);
-    const isActive = expiry > now && user.status === 'active';
-
-    res.json({
-      isPremium: isActive,
-      plan: user.plan,
-      expiresAt: user.expires_at,
-      status: user.status
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
-  }
-};
-
-const getAllPremiumUsers = async (req, res) => {
-  const table = TABLES.users;
-  try {
-    const result = await databases.listDocuments(databaseId, table);
-    res.json({ success: true, users: result.documents });
-  } catch (error) {
-    console.error(`[APPWRITE FAILURE] Table: ${table} | Action: getAllPremiumUsers failed`);
-    res.status(500).json({ success: false, error: 'Internal server error' });
-  }
-};
-
-const getAnalytics = async (req, res) => {
-  const table = TABLES.analytics;
-  try {
-    const premiumUsers = await databases.listDocuments(databaseId, TABLES.users);
-    let payments = { documents: [], total: 0 };
-    try {
-      payments = await databases.listDocuments(databaseId, TABLES.payments);
-    } catch (e) {}
     
-    const now = new Date();
-    const activeCount = premiumUsers.documents.filter(u => new Date(u.expires_at) > now).length;
-    const totalRevenue = payments.documents.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
+    // Tiered Reset Logic
+    let planType = 'free';
+    if (user) {
+      const expiry = new Date(user.expires_at);
+      if (expiry > now && user.status === 'active') {
+        planType = user.plan;
+      } else {
+        planType = 'free';
+      }
+    }
+
+    const config = PLAN_CONFIG[planType];
+    let used = user ? (user.messages_used || 0) : 0;
+    let lastReset = user ? new Date(user.last_reset || 0) : new Date(0);
+
+    // DAILY/MONTHLY RESET
+    let needsReset = false;
+    if (config.period === 'daily') {
+      needsReset = lastReset.toDateString() !== now.toDateString();
+    } else {
+      needsReset = lastReset.getMonth() !== now.getMonth() || lastReset.getFullYear() !== now.getFullYear();
+    }
+
+    if (needsReset) {
+      used = 0;
+      if (user) {
+        await databases.updateDocument(databaseId, TABLES.users, user.$id, {
+          messages_used: 0,
+          last_reset: now.toISOString()
+        });
+      }
+    }
+
+    const isExhausted = used >= config.limit;
+    
+    // Handle Notification Flag
+    let activationData = null;
+    if (user && user.notified === false) {
+      activationData = { plan: user.plan, expiresAt: user.expires_at };
+      // Mark as notified
+      await databases.updateDocument(databaseId, TABLES.users, user.$id, { notified: true });
+    }
+
+    // Auto-increment usage (non-blocking if bot calls this on command)
+    if (!isExhausted && user && req.query.increment === 'true') {
+      databases.updateDocument(databaseId, TABLES.users, user.$id, { messages_used: used + 1 });
+    }
 
     res.json({
-      success: true,
-      data: {
-        total_premium_users: premiumUsers.total,
-        active_premium_users: activeCount,
-        total_revenue: totalRevenue,
-        recent_payments: payments.documents.slice(0, 10)
-      }
+      isPremium: planType !== 'free',
+      plan: planType,
+      limit: config.limit,
+      used: used,
+      isExhausted: isExhausted,
+      activationNotify: activationData,
+      expiresAt: user ? user.expires_at : null
     });
+
   } catch (error) {
-    console.error(`[APPWRITE FAILURE] Table: ${table} | Action: getAnalytics failed`);
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    console.error('[STATUS ERROR]', error.message);
+    res.status(500).json({ success: false });
   }
 };
 
-module.exports = {
-  createPayment,
-  handleCallback,
-  webhookHandler,
-  checkPremiumStatus,
-  getAllPremiumUsers,
-  getAnalytics
+module.exports = { 
+  createPayment, 
+  handleCallback, 
+  webhookHandler, 
+  checkPremiumAndUsage,
+  PLAN_CONFIG 
 };
