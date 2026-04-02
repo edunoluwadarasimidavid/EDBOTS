@@ -147,6 +147,17 @@ const runtime = (seconds) => {
   return parts.join(' ');
 };
 
+/**
+ * Normalizes phone numbers for owner/sender comparison
+ */
+function normalizeNumber(id = "") {
+  return id
+    .toString()
+    .replace(/@s.whatsapp.net/g, "")
+    .replace(/@lid/g, "")
+    .replace(/[^0-9]/g, "");
+}
+
 module.exports = {
   downloadMedia,
   formatDuration,
@@ -158,5 +169,6 @@ module.exports = {
   extractUrl,
   random,
   isUrl,
-  runtime
+  runtime,
+  normalizeNumber
 };

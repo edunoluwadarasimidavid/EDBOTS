@@ -2,90 +2,117 @@ const { getFormattedUptime } = require('../../utils/uptime');
 const config = require('../../config');
 
 module.exports = {
-    name: 'menu',
-    description: 'Displays the dynamic command menu',
-    category: 'menu',
-    aliases: ['help', 'h'],
-    async execute(sock, msg, args, context) {
-        try {
-            const { commands, reply, prefix } = context;
-            const uptime = getFormattedUptime();
-            const botName = config.botName || 'EDBOTS';
-            const ownerName = Array.isArray(config.ownerName) ? config.ownerName[0] : config.ownerName;
+  name: 'menu',
+  description: 'Displays the premium EDBOT AI system menu',
+  category: 'menu',
+  aliases: ['help', 'h', 'commands'],
+  usage: '.menu',
+  async handler(context) {
+    const { sock, msg, commands, prefix, isOwner, isAdmin, isGroup } = context;
+    
+    // 1. DYNAMIC IDENTITY RESOLUTION
+    const botNumber = sock?.user?.id ? sock.user.id.split(":")[0] : "Unknown";
+    const pushName = msg.pushName || "User";
+    const runtime = getFormattedUptime() || "0h 0m 0s";
+    
+    // DYNAMIC OWNER RESOLUTION (Step 4 & REQUIREMENT: OWNER NAME FIX)
+    // We try to get the connected session owner's name
+    const ownerPushName = sock?.user?.name || config.ownerName?.[0] || "EDBOTS Owner";
+    const ownerNumber = sock?.user?.id ? sock.user.id.split("@")[0].split(":")[0] : config.owner?.[0];
+    const ownerDisplayName = ownerPushName || ownerNumber;
 
-            // Handle Help for specific command
-            if (args[0]) {
-                const cmd = commands.get(args[0].toLowerCase());
-                if (cmd) {
-                    let helpText = `╭─╼─≪ *COMMAND HELP* ≫─╼─╮\n`;
-                    helpText += `│ 🏷️ *Name:* ${cmd.name}\n`;
-                    helpText += `│ 📚 *Description:* ${cmd.description || cmd.desc || 'No description'}\n`;
-                    helpText += `│ 📂 *Category:* ${cmd.category || 'general'}\n`;
-                    if (cmd.aliases && cmd.aliases.length > 0) {
-                        helpText += `│ 🔗 *Aliases:* ${cmd.aliases.join(', ')}\n`;
-                    }
-                    if (cmd.usage) {
-                        helpText += `│ ⌨️ *Usage:* ${prefix}${cmd.name} ${cmd.usage}\n`;
-                    }
-                    helpText += `╰╼━━━━━━━━━━━━━━━╾╯`;
-                    return await reply(helpText);
-                }
-            }
-
-            // Group unique commands by category
-            const categories = {};
-            const uniqueCommands = new Set(commands.values());
-
-            uniqueCommands.forEach((cmd) => {
-                // Filter ownerOnly commands
-                if (cmd.ownerOnly && !context.isOwner) return;
-                
-                // Filter groupOnly commands if not in group (optional, but requested for cleanup)
-                if (cmd.groupOnly && !context.isGroup) return;
-
-                const cat = cmd.category || 'general';
-                if (!categories[cat]) categories[cat] = [];
-                categories[cat].push(cmd.name);
-            });
-
-            let menuText = `╭─╼─≪ *${botName.toUpperCase()}* ≫─╼─╮
-│ 🤖 *Owner:* ${ownerName}
-│ ⏱️ *Uptime:* ${uptime}
-│ 👑 *Prefix:* [ ${prefix} ]
-│ ⚙️ *Version:* 1.1.0
-╰╼━━━━━━━━━━━━━━━╾╯\n\n`;
-
-            const sortedCategories = Object.keys(categories).sort();
-
-            sortedCategories.forEach(cat => {
-                menuText += `╭╼━≪ 🌟 *${cat.toUpperCase()}* ≫━╾╮\n`;
-                // Sort command names within category
-                categories[cat].sort().forEach(cmdName => {
-                    menuText += `┃ • ${prefix}${cmdName}\n`;
-                });
-                menuText += `╰━━━━━━━━━━━━━━━╯\n\n`;
-            });
-
-            menuText += `> *Type ${prefix}help <command> for details*\n\n`;
-            menuText += `*© 2026 EDBOTS Framework*`;
-
-            await sock.sendMessage(msg.key.remoteJid, { 
-                text: menuText.trim(),
-                contextInfo: {
-                    externalAdReply: {
-                        title: `${botName} Assistant`,
-                        body: `Dynamic Command System Active`,
-                        thumbnailUrl: "https://github.com/edunoluwadarasimidavid.png",
-                        sourceUrl: config.social?.github || "",
-                        mediaType: 1,
-                        renderLargerThumbnail: true
-                    }
-                }
-            }, { quoted: msg });
-
-        } catch (error) {
-            console.error('[Menu Error]', error);
-            context.reply('❌ Failed to generate menu.');
-        }
+    const mode = config.selfMode ? "Self (Private)" : "Public (Global)";
+    
+    let chatId = msg.key.remoteJid;
+    if (msg.key.fromMe && sock?.user?.id) {
+      chatId = sock.user.id.split(":")[0] + "@s.whatsapp.net";
     }
+
+    try {
+      // 2. BUILD A FILTER ENGINE (STRICT CONTEXT RULES)
+      const uniqueCommands = commands instanceof Map ? new Set(commands.values()) : new Set();
+      
+      const visibleCommands = Array.from(uniqueCommands).filter(cmd => {
+        // GLOBAL RBAC Rules
+        if (cmd.ownerOnly && !isOwner) return false;
+        if (cmd.adminOnly && !isAdmin && !isOwner) return false; // Owners can see admin cmds
+        if (cmd.groupOnly && !isGroup) return false;
+
+        // PRIVATE CHAT SPECIFIC EXCLUSIONS
+        if (!isGroup) {
+          const cat = (cmd.category || "").toLowerCase();
+          const privateSafeCategories = ['ai', 'fun', 'general', 'media', 'textmaker', 'utility', 'menu', 'system'];
+          const restrictedInPrivate = ['admin', 'group', 'moderation'];
+          
+          if (restrictedInPrivate.includes(cat)) return false;
+          // Even if category is 'general', check if command specifically needs a group (redundant but safe)
+          if (cmd.groupOnly) return false;
+        }
+
+        return true;
+      });
+
+      // 3. GROUPING & HIDING EMPTY CATEGORIES
+      const grouped = {};
+      visibleCommands.forEach((cmd) => {
+        const category = (cmd.category || "GENERAL").toUpperCase().trim();
+        if (!grouped[category]) grouped[category] = [];
+        
+        // Deduplicate command names
+        if (!grouped[category].includes(cmd.name)) {
+          grouped[category].push(cmd.name);
+        }
+      });
+
+      // 4. HEADER CONSTRUCTION (EXACT REQUESTED FORMAT)
+      const menuTitle = isGroup ? "GROUP SMART MENU" : "PUBLIC SMART MENU";
+      
+      let menuText = `╭━━━〔 ${menuTitle} 〕━━━⬣\n`;
+      menuText += `┃ 👤 User: ${pushName.toUpperCase()}\n`;
+      menuText += `┃ 👑 Owner: ${ownerDisplayName}\n`;
+      menuText += `┃ 🔢 Bot: ${botNumber}\n`;
+      menuText += `┃ 🏁 Prefix: ${prefix}\n`;
+      menuText += `┃ ⏱️ Runtime: ${runtime}\n`;
+      menuText += `┃ ⚙️ Mode: ${mode}\n`;
+      menuText += `╰━━━━━━━━━━━━━━━━⬣\n\n`;
+
+      // 5. DYNAMIC CATEGORY BLOCKS
+      const sortedCategories = Object.keys(grouped).sort();
+
+      for (const cat of sortedCategories) {
+        // Double check for Private Chat: skip group/admin categories even if they somehow got here
+        if (!isGroup && ['ADMIN', 'GROUP', 'MODERATION'].includes(cat)) continue;
+
+        menuText += `╭━━━〔 ${cat} 〕━━━⬣\n`;
+        const categoryCommands = grouped[cat].sort();
+        
+        categoryCommands.forEach(cmdName => {
+          menuText += `┃ • ${prefix}${cmdName}\n`;
+        });
+        
+        menuText += `╰━━━━━━━━━━━━━━━⬣\n\n`;
+      }
+
+      // 6. DELIVERY
+      await sock.sendMessage(chatId, { 
+        text: menuText.trim(),
+        contextInfo: {
+          externalAdReply: {
+            title: `EDBOTS AI SYSTEM v3.0`,
+            body: `Role-Based Automation Framework`,
+            thumbnailUrl: "https://github.com/edunoluwadarasimidavid.png",
+            sourceUrl: config.social?.github || "https://github.com/EDBOTS",
+            mediaType: 1,
+            renderLargerThumbnail: true
+          }
+        }
+      }, { quoted: msg });
+
+    } catch (err) {
+      console.error("[REFAC MENU ERROR]", err);
+      try {
+        await context.reply("❌ Error rendering system menu. Contact admin.");
+      } catch (e) {}
+    }
+  }
 };

@@ -4,13 +4,17 @@
 
 const fs = require('fs');
 const path = require('path');
-const config = require('./config'); // Assuming config.js provides defaultGroupSettings
+const config = require('./config');
 
 const DB_PATH = path.join(__dirname, 'database');
 const GROUPS_DB = path.join(DB_PATH, 'groups.json');
 const USERS_DB = path.join(DB_PATH, 'users.json');
 const WARNINGS_DB = path.join(DB_PATH, 'warnings.json');
 const MODS_DB = path.join(DB_PATH, 'mods.json');
+const BANNED_DB = path.join(DB_PATH, 'banned.json');
+const DISABLED_CMD_DB = path.join(DB_PATH, 'disabledCommands.json');
+const SECURITY_LOG_DB = path.join(DB_PATH, 'securitylog.json');
+const ROLES_DB = path.join(DB_PATH, 'roles.json');
 
 // In-memory cache for database files
 const cache = {};
@@ -26,13 +30,21 @@ const initDB = (filePath, defaultData = {}) => {
     fs.writeFileSync(filePath, JSON.stringify(defaultData, null, 2));
   }
   // Load initial data into cache
-  cache[filePath] = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  try {
+    cache[filePath] = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch (e) {
+    cache[filePath] = defaultData;
+  }
 };
 
 initDB(GROUPS_DB, {});
 initDB(USERS_DB, {});
 initDB(WARNINGS_DB, {});
 initDB(MODS_DB, { moderators: [] });
+initDB(BANNED_DB, { banned: [] });
+initDB(DISABLED_CMD_DB, {});
+initDB(SECURITY_LOG_DB, { logs: [] });
+initDB(ROLES_DB, {});
 
 // Read database (from cache if available, otherwise from file)
 const readDB = (filePath) => {
@@ -64,13 +76,13 @@ const getGroupSettings = (groupId) => {
   const groups = readDB(GROUPS_DB);
   if (!groups[groupId]) {
     groups[groupId] = { ...config.defaultGroupSettings };
-    writeDB(GROUPS_DB, groups); // This will update the cache as well
+    writeDB(GROUPS_DB, groups);
   }
   return groups[groupId];
 };
 
 const updateGroupSettings = (groupId, settings) => {
-  const groups = readDB(GROUPS_DB); // Get from cache
+  const groups = readDB(GROUPS_DB);
   groups[groupId] = { ...groups[groupId], ...settings };
   return writeDB(GROUPS_DB, groups);
 };
@@ -95,7 +107,91 @@ const updateUser = (userId, data) => {
   return writeDB(USERS_DB, users);
 };
 
-// Warnings System
+// Banned Users
+const isBanned = (userId) => {
+  const data = readDB(BANNED_DB);
+  return data.banned.includes(userId);
+};
+
+const banUser = (userId) => {
+  const data = readDB(BANNED_DB);
+  if (!data.banned.includes(userId)) {
+    data.banned.push(userId);
+    return writeDB(BANNED_DB, data);
+  }
+  return false;
+};
+
+const unbanUser = (userId) => {
+  const data = readDB(BANNED_DB);
+  if (data.banned.includes(userId)) {
+    data.banned = data.banned.filter(id => id !== userId);
+    return writeDB(BANNED_DB, data);
+  }
+  return false;
+};
+
+// Disabled Commands
+const isDisabled = (groupId, commandName) => {
+  const data = readDB(DISABLED_CMD_DB);
+  if (!data[groupId]) return false;
+  return data[groupId].includes(commandName);
+};
+
+const disableCmd = (groupId, commandName) => {
+  const data = readDB(DISABLED_CMD_DB);
+  if (!data[groupId]) data[groupId] = [];
+  if (!data[groupId].includes(commandName)) {
+    data[groupId].push(commandName);
+    return writeDB(DISABLED_CMD_DB, data);
+  }
+  return false;
+};
+
+const enableCmd = (groupId, commandName) => {
+  const data = readDB(DISABLED_CMD_DB);
+  if (data[groupId]) {
+    data[groupId] = data[groupId].filter(cmd => cmd !== commandName);
+    return writeDB(DISABLED_CMD_DB, data);
+  }
+  return false;
+};
+
+// Security Logs
+const addSecurityLog = (log) => {
+  const data = readDB(SECURITY_LOG_DB);
+  data.logs.push({
+    ...log,
+    timestamp: Date.now()
+  });
+  // Keep last 100 logs
+  if (data.logs.length > 100) data.logs.shift();
+  return writeDB(SECURITY_LOG_DB, data);
+};
+
+const getSecurityLogs = () => {
+  return readDB(SECURITY_LOG_DB).logs || [];
+};
+
+// Roles
+const setRole = (userId, role) => {
+  const roles = readDB(ROLES_DB);
+  roles[userId] = role;
+  return writeDB(ROLES_DB, roles);
+};
+
+const getRole = (userId) => {
+  const roles = readDB(ROLES_DB);
+  return roles[userId] || 'user';
+};
+
+const removeRole = (userId) => {
+  const roles = readDB(ROLES_DB);
+  delete roles[userId];
+  return writeDB(ROLES_DB, roles);
+};
+
+// ... existing helper functions (warnings, mods) ...
 const getWarnings = (groupId, userId) => {
   const warnings = readDB(WARNINGS_DB);
   const key = `${groupId}_${userId}`;
@@ -105,17 +201,9 @@ const getWarnings = (groupId, userId) => {
 const addWarning = (groupId, userId, reason) => {
   const warnings = readDB(WARNINGS_DB);
   const key = `${groupId}_${userId}`;
-  
-  if (!warnings[key]) {
-    warnings[key] = { count: 0, warnings: [] };
-  }
-  
+  if (!warnings[key]) warnings[key] = { count: 0, warnings: [] };
   warnings[key].count++;
-  warnings[key].warnings.push({
-    reason,
-    date: Date.now()
-  });
-  
+  warnings[key].warnings.push({ reason, date: Date.now() });
   writeDB(WARNINGS_DB, warnings);
   return warnings[key];
 };
@@ -123,7 +211,6 @@ const addWarning = (groupId, userId, reason) => {
 const removeWarning = (groupId, userId) => {
   const warnings = readDB(WARNINGS_DB);
   const key = `${groupId}_${userId}`;
-  
   if (warnings[key] && warnings[key].count > 0) {
     warnings[key].count--;
     warnings[key].warnings.pop();
@@ -140,7 +227,6 @@ const clearWarnings = (groupId, userId) => {
   return writeDB(WARNINGS_DB, warnings);
 };
 
-// Moderators System
 const getModerators = () => {
   const mods = readDB(MODS_DB);
   return mods.moderators || [];
@@ -182,5 +268,16 @@ module.exports = {
   getModerators,
   addModerator,
   removeModerator,
-  isModerator
+  isModerator,
+  isBanned,
+  banUser,
+  unbanUser,
+  isDisabled,
+  disableCmd,
+  enableCmd,
+  addSecurityLog,
+  getSecurityLogs,
+  setRole,
+  getRole,
+  removeRole
 };

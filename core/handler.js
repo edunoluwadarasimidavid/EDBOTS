@@ -6,9 +6,18 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
+const { 
+    getUser, 
+    isBanned, 
+    isDisabled, 
+    addSecurityLog,
+    getGroupSettings,
+    updateGroupSettings
+} = require('../database');
 const { addMessage } = require('../utils/groupstats');
 const antiBan = require('../utils/antiBan');
 const { askAI } = require('../utils/aiEngine');
+const { normalizeNumber } = require('../utils/helpers');
 
 // Group metadata cache
 const groupMetadataCache = new Map();
@@ -51,22 +60,17 @@ const getGroupMetadata = async (sock, groupId) => {
 };
 
 /**
- * Normalizes phone numbers
- */
-const normalizeNumber = (jid) => {
-    if (!jid) return '';
-    return jid.replace(/[^0-9]/g, '');
-};
-
-/**
  * Checks if sender is owner
  */
-const isOwner = (sock, sender) => {
-    if (!sender) return false;
-    const senderNumber = normalizeNumber(sender.split('@')[0]);
+const isOwner = (sock, senderRaw, fromMe = false) => {
+    if (fromMe === true) return true;
+    if (!senderRaw) return false;
+    
+    const sender = normalizeNumber(senderRaw);
+    const owner = normalizeNumber(process.env.OWNER_NUMBER || config.owner[0] || "2349160359154");
     const botNumber = normalizeNumber(sock.user.id.split(':')[0]);
-    const owners = (config.owner || []).map(owner => normalizeNumber(owner));
-    return owners.includes(senderNumber) || senderNumber === botNumber;
+    
+    return sender === owner || sender === botNumber;
 };
 
 /**
@@ -106,12 +110,34 @@ const handleMessage = async (sock, msg, commands) => {
         if (!content) return;
 
         const fromMe = msg.key.fromMe;
-        const sender = fromMe ? (sock.user.id.split(':')[0] + '@s.whatsapp.net') : (msg.key.participant || from);
         const isGroup = from.endsWith('@g.us');
+        
+        // STEP 2 — Safe sender extraction priority
+        const senderRaw = 
+            msg.key.participant || 
+            msg.participant || 
+            msg.key.remoteJid || 
+            "";
+        
+        const sender = normalizeNumber(senderRaw);
+        
+        // 0. BANNED CHECK (CRITICAL)
+        if (isBanned(senderRaw)) {
+            // We only reply once or silent? User asked for reply: ⛔ Access denied.
+            // To avoid spamming back to banned users, we check if it was a command
+            const body = (content.conversation || content.extendedTextMessage?.text || '').trim();
+            if (body.startsWith(config.prefix || '.')) {
+                // Return early without replying to prevent bot loops if banned person tries to spam
+                return; 
+            }
+            return;
+        }
+
+        const ownerStatus = isOwner(sock, senderRaw, fromMe);
         const groupMetadata = isGroup ? await getGroupMetadata(sock, from) : null;
 
         // Enhanced Body Extraction
-        let body = (
+        const fullBody = (
             content.conversation || 
             content.extendedTextMessage?.text || 
             content.imageMessage?.caption || 
@@ -125,36 +151,47 @@ const handleMessage = async (sock, msg, commands) => {
         
         const isReply = !!(content.extendedTextMessage?.contextInfo?.quotedMessage);
         
-        // Privilege calculation
-        const ownerStatus = isOwner(sock, sender);
-        const adminStatus = isGroup ? await isAdmin(sock, sender, from, groupMetadata) : false;
-        const isPrivileged = ownerStatus || adminStatus;
-
         // Command detection
         const prefix = config.prefix || '.';
-        const isCmd = body.startsWith(prefix);
-        const commandName = isCmd ? body.slice(prefix.length).trim().split(/\s+/)[0].toLowerCase() : null;
+        const isCmd = fullBody.startsWith(prefix);
+        
+        const commandName = isCmd 
+            ? fullBody.slice(prefix.length).trim().split(/\s+/)[0].toLowerCase() 
+            : null;
+
+        const args = isCmd 
+            ? fullBody.slice(prefix.length).trim().split(/\s+/).slice(1) 
+            : [];
 
         // Safe Debug Logs
         if (isCmd || config.debug) {
-            console.log(`[MSG] From: ${sender} | Group: ${isGroup} | fromMe: ${fromMe} | Cmd: ${commandName || 'None'}`);
+            console.log(`[MSG] From: ${senderRaw} | Cmd: ${commandName || 'None'} | isOwner: ${ownerStatus} | isGroup: ${isGroup}`);
         }
 
         // Anti-Ban: Determine if we should respond
+        const adminStatus = isGroup ? await isAdmin(sock, senderRaw, from, groupMetadata) : false;
+        const isPrivileged = ownerStatus ? 'owner' : adminStatus;
         if (!(await antiBan.shouldRespond(from, isCmd, isPrivileged))) return;
 
-        // selfMode check: If true, only owner/sudo can use commands
+        // selfMode check
         if (config.selfMode && !ownerStatus && isCmd) return;
 
-        if (!body && !isReply) return;
+        if (!fullBody && !isReply) return;
 
         const context = {
-            from, sender, isGroup, groupMetadata, body,
+            sock,
+            msg,
+            from, 
+            sender: senderRaw, 
+            isGroup, 
+            groupMetadata, 
+            body: fullBody,
             isOwner: ownerStatus,
             isAdmin: adminStatus,
             isBotAdmin: isGroup ? await isBotAdmin(sock, from, groupMetadata) : false,
             commands,
             prefix,
+            args,
             reply: async (text) => {
                 await antiBan.simulateHumanBehavior(sock, from, text);
                 return sock.sendMessage(from, { text }, { quoted: msg });
@@ -163,49 +200,84 @@ const handleMessage = async (sock, msg, commands) => {
 
         // Group Logic
         if (isGroup && addMessage) {
-            addMessage(from, sender);
+            addMessage(from, senderRaw);
         }
 
         // Command Processing
         if (isCmd && commandName) {
-            const args = body.slice(prefix.length).trim().split(/\s+/).slice(1);
             const command = commands.get(commandName);
             
             if (command) {
-                // Permission checks
-                if (command.ownerOnly && !context.isOwner) return context.reply(config.messages.ownerOnly);
-                if (command.groupOnly && !context.isGroup) return context.reply(config.messages.groupOnly);
-                if (command.adminOnly && !context.isAdmin && !context.isOwner) return context.reply(config.messages.adminOnly);
+                // 🔐 GLOBAL SECURITY ENFORCEMENT
+
+                // 1. BANNED CHECK (Redundant but safe)
+                if (isBanned(senderRaw)) {
+                   console.log(`[SECURITY BLOCK] Sender: ${senderRaw} Command: ${commandName} Reason: banned`);
+                   return context.reply('⛔ Access denied.');
+                }
+
+                // 2. OWNER CHECK
+                if (command.isOwner && !context.isOwner) {
+                    addSecurityLog({ sender: senderRaw, command: commandName, reason: 'owner denied', group: from });
+                    console.log(`[SECURITY BLOCK] Sender: ${senderRaw} Command: ${commandName} Reason: owner denied`);
+                    return context.reply('⛔ Owner-only command.');
+                }
+
+                // 3. ADMIN CHECK
+                if (command.isAdmin && !context.isAdmin && !context.isOwner) {
+                    addSecurityLog({ sender: senderRaw, command: commandName, reason: 'admin denied', group: from });
+                    console.log(`[SECURITY BLOCK] Sender: ${senderRaw} Command: ${commandName} Reason: admin denied`);
+                    return context.reply('⛔ Admin-only command.');
+                }
+
+                // 4. GROUP CHECK
+                if (command.isGroup && !context.isGroup) {
+                    addSecurityLog({ sender: senderRaw, command: commandName, reason: 'group denied', group: from });
+                    console.log(`[SECURITY BLOCK] Sender: ${senderRaw} Command: ${commandName} Reason: group denied`);
+                    return context.reply('⛔ Group-only command.');
+                }
+
+                // 5. DISABLED COMMAND CHECK
+                if (isGroup && isDisabled(from, commandName)) {
+                    console.log(`[SECURITY BLOCK] Sender: ${senderRaw} Command: ${commandName} Reason: disabled in group`);
+                    return context.reply('⛔ This command is disabled in this group.');
+                }
 
                 try {
-                    await command.execute(sock, msg, args, context);
+                    console.log(`[SYSTEM] Executing command: ${commandName}`);
+                    
+                    if (typeof command.handler === 'function') {
+                        await command.handler(context);
+                    } else if (typeof command.execute === 'function') {
+                        await command.execute(sock, msg, args, context);
+                    } else {
+                        console.error(`[ERROR] Command ${commandName} has no handler/execute function!`);
+                    }
+                    
+                    console.log(`[SYSTEM] Command success: ${commandName}`);
                 } catch (cmdError) {
-                    console.error(`[COMMAND ERROR] ${commandName}:`, cmdError);
+                    console.error(`[COMMAND FAILED] ${commandName}:`, cmdError);
                     context.reply('❌ An internal error occurred while executing this command.');
                 }
-                return; // End command processing
+                return;
+            } else {
+                console.log(`[SYSTEM] Command NOT FOUND: ${commandName}`);
             }
         }
 
-        // --- AI Auto Reply & Shortcut Logic ---
-
-        // AI shortcut: "ai: question"
-        if (body.toLowerCase().startsWith('ai:')) {
-            const question = body.slice(3).trim();
+        // AI Logic...
+        if (fullBody.toLowerCase().startsWith('ai:')) {
+            const question = fullBody.slice(3).trim();
             const answer = await askAI(question);
             if (answer && answer !== "NOT_CONNECTED") {
                 return await context.reply(answer);
             }
         }
 
-        // Global AI Auto Reply (Private chats only to avoid ban, except self-chat)
-        if (config.autoReply && !isGroup && !isCmd) {
-            // Only auto-reply if not from me, OR if from me but explicitly asked (though usually we don't auto-reply to ourselves)
-            if (!fromMe) {
-                const answer = await askAI(body);
-                if (answer && answer !== "NOT_CONNECTED") {
-                    return await context.reply(answer);
-                }
+        if (config.autoReply && !isGroup && !isCmd && !fromMe) {
+            const answer = await askAI(fullBody);
+            if (answer && answer !== "NOT_CONNECTED") {
+                return await context.reply(answer);
             }
         }
 

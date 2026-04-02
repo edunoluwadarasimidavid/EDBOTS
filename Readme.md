@@ -2,15 +2,15 @@
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f2027,50:203a43,100:2c5364&height=180&section=header&text=EDBOTS+V3+PRO&fontSize=50&fontColor=ffffff&animation=fadeIn&fontAlignY=35"/>
 
-# 🤖 EDBOTS V3: The Industrial-Grade WhatsApp Framework
-### Advanced • Secure • Modular • Terminal-Optimized
+# 🤖 EDBOT AI SYSTEM: The Professional WhatsApp Framework
+### Advanced • Secure • Modular • Role-Based • Intelligent
 
 <br/>
 
 [![Node.js Version](https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Baileys MD](https://img.shields.io/badge/Baileys-Multi%20Device-00bcd4?style=for-the-badge)](https://github.com/WhiskeySockets/Baileys)
 [![Architecture](https://img.shields.io/badge/Architecture-Modular-blueviolet?style=for-the-badge)](https://github.com/edunoluwadarasimidavid/EDBOTS)
-[![Security](https://img.shields.io/badge/Security-Anti--Tamper-red?style=for-the-badge)](https://github.com/edunoluwadarasimidavid/EDBOTS)
+[![Security](https://img.shields.io/badge/Security-RBAC--Hardened-red?style=for-the-badge)](https://github.com/edunoluwadarasimidavid/EDBOTS)
 
 </div>
 
@@ -18,215 +18,148 @@
 
 # 🌍 Overview
 
-**EDBOTS V3** is a high-performance, terminal-based WhatsApp automation framework built on the **Baileys Multi-Device (MD)** library. This version represents a significant upgrade from previous iterations, focusing on stability, speed, and uncompromising security.
+**EDBOT AI SYSTEM** (formerly EDBOTS V3) is a premium, industrial-grade WhatsApp automation framework. Built on the **Baileys Multi-Device (MD)** library and optimized for **Node.js 18+**, it provides a high-performance environment for intelligent automation, system-level management, and secure communication.
 
 ---
 
-# 🚀 Latest Improvements (March 2026)
+# 💎 Premium Features & Upgrades (March 2026)
 
-The framework has been recently optimized for maximum reliability and ease of use:
+The framework has been transformed into a professional **Role-Based Intelligent System**:
 
+- **Premium EDBOT AI System Menu**:
+    - **Intelligent Architecture**: Rebuilt from the ground up as a framework interface, not just a list of commands.
+    - **Context-Aware Filtering**: Automatically filters commands based on the user's role (Owner, Admin, Group, Private) and current chat environment.
+    - **Split-Menu Support**: Specialized menus for public, group, admin, and owner commands.
+    - **Dynamic Identity Sync**: Header automatically displays live bot number, profile name, and system uptime.
+    - **Premium Visual Blocks**: Professional monospaced formatting with category-based grouping.
+- **Advanced Role-Based Access Control (RBAC)**:
+    - **Automated Metadata Normalization**: System-wide security fallback that assigns permissions based on command category.
+    - **5-Layer Security**: Strict validation for **Owner**, **Admin**, **Group**, **Premium**, and **Self-Mode** permissions.
+    - **Direct Session Detection**: Dynamically identifies the connected owner account directly from the WhatsApp session.
+    - **Audit Logging**: Real-time security alerts in the terminal for unauthorized access attempts.
+    - **Graceful Error Shielding**: Professional permission-denied responses instead of silent failures or crashes.
 - **High-Grade Update System**: 
-    - **Non-Git Update Mechanism**: Downloads the entire repository as a ZIP archive, extracts it, and updates all system files automatically.
-    - **Session Protection**: Specifically designed to exclude the `session/` folder, ensuring authentication is never broken during updates.
-    - **Automatic Cleanup**: Clears temporary update cache immediately after completion.
-    - **Live Notification**: Sends a detailed success message to the WhatsApp owner account upon completion.
-- **Enhanced Message & Context Engine**:
-    - **Robust Extraction**: Full support for buttons, lists, template replies, and interactive messages.
-    - **Self-Chat & DM Optimization**: Seamless command execution in self-chats and private messages for bot owners.
-    - **Intelligent Dynamic Menu**: Context-aware command filtering that hides owner-only and group-only commands based on user permissions and chat type.
-    - **Advanced Security Mode**: Integrated `selfMode` for toggling between public and private operation with one command.
+    - **Non-Git Update Mechanism**: ZIP-based updating that preserves your `session/` folder and authentication.
+    - **Live Notification**: Detailed system report sent to the owner's WhatsApp upon successful update.
 - **High-Grade Anti-Ban System**: 
-    - **Account Warming**: Automatically introduces a "wake up" delay after long periods of inactivity to simulate human behavior.
-    - **Dynamic Typing Simulation**: Calculates typing duration based on response length (WPM simulation).
-    - **Smart Presence**: Uses `presenceObserve` and `sendPresenceUpdate` to mimic real user interaction before replying.
-    - **Global Rate Limiting**: Per-user and global message caps to prevent spam-triggered bans.
-- **Puter AI Integration**: Full support for `.auto-reply` using the Puter.js engine with localized instruction sets.
-- **Recursive Command Loader**: Commands are now loaded recursively from all subfolders within the `commands/` directory.
-- **Dynamic Menu System**: The `.menu` command is now fully dynamic, automatically categorizing all 111+ commands.
-- **Dependency-Free Stability**: Critical commands (Sticker, Take, Crop, Truth, etc.) refactored to remove unstable external dependencies.
-- **System-Native FFmpeg**: Media utilities now leverage the system's native FFmpeg for superior performance.
+    - **Human Simulation**: Dynamic typing calculation (WPM-based), account warming, and presence observation.
+    - **Direct Baileys Delivery**: Optimized message delivery for self-chats and high-priority commands to ensure 100% visibility.
+- **Recursive Command Engine**: Dynamically loads and validates 111+ commands from the `commands/` directory.
 
 ---
 
-# 📚 Command List (111+ Total)
+# 📚 Intelligent Command Menu
 
-### 🛡️ ADMIN
-- **antigroupmention**: Configure antigroupmention protection (delete/kick)
-- **antilink**: Configure antilink protection (delete/kick)
-- **antitag**: Configure anti-tag protection (tagall/hidetag)
-- **autosticker**: Enable or disable auto-sticker conversion
-- **clean**: Clean messages (all or from specific user)
-- **delete**: Delete a replied message
-- **demote**: Remove admin privileges from member
-- **goodbye**: Enable/disable goodbye messages
-- **grouplink**: Get group invite link
-- **hidetag**: Silently tag all members in the group
-- **kick**: Remove a participant from the group
-- **mute**: Close group (only admins can send messages)
-- **promote**: Promote member to admin
-- **resetwarn**: Reset all warnings for a user
-- **setgoodbye**: Set custom goodbye message
-- **setwelcome**: Set custom welcome message
-- **tagall**: Tag all group members
-- **unmute**: Open group (all members can send messages)
-- **warn**: Warn a user
-- **welcome**: Enable/disable welcome messages
+Access the system through specialized role-based menus:
 
-### 🧠 AI & AUTOMATION
-- **ai**: Chat with AI (ChatGPT-style)
-- **imagine**: Generate AI art from text prompt
-- **auto-reply**: Enable/disable AI auto-reply system
+### 🎮 SYSTEM NAVIGATION
+- **.menu**: Displays public commands (AI, Media, Fun, Utility, etc.)
+- **.groupmenu**: Group-specific utilities (Only visible in groups)
+- **.adminmenu**: Group moderation tools (Only visible to group admins)
+- **.ownermenu**: Full system control (Only visible to the bot owner)
+- **.help / .h**: Aliases for the main public menu.
 
-### 🎮 FUN & GAMES
-- **truth**: Get a random truth question
-- **dare**: Get a random dare challenge
-- **joke**: Get random joke
-- **meme**: Get random memes
-- **memesearch**: Search and get memes/gifs
-- **ship**: Ship two users randomly
-- **gayrate**: Playful gay percentage check
-- **insult**: Give a silly insult to a user
-- **compliment**: Get a random compliment
-- **flirt**: Get a random flirty pickup line
-- **pies**: Get random pies images by country
+### 🛡️ MODERATION (Admin/Group Menu)
+- **antigroupmention, antilink, antitag**: Advanced group protection filters.
+- **kick, promote, demote, mute, unmute**: Core participant management.
+- **welcome, goodbye, setwelcome, setgoodbye**: Automated member onboarding.
+- **tagall, hidetag**: Efficient group-wide communication.
+- **warn, resetwarn, clean, delete**: Message and behavioral control.
 
-### 🎨 TEXT & MEDIA
-- **sticker**: Convert image or video to sticker
-- **crop**: Convert image to cropped sticker
-- **take**: Steal a sticker and change its packname
-- **simage**: Convert sticker to image (PNG) or video (MP4)
-- **attp**: Create animated text sticker
-- **tts**: Convert text to speech (TTS-Nova)
-- **1917, arena, blackpink, devil, fire, glitch, hacker, ice, impressive, leaves, light, matrix, metallic, neon, purple, sand, snow, thunder**: Advanced text effects
+### 🧠 AI & CREATIVE (Public Menu)
+- **ai**: Advanced ChatGPT-integrated assistant.
+- **imagine**: Professional text-to-image AI generation.
+- **auto-reply**: Autonomous AI response engine (Puter AI).
+- **sticker, crop, simage, take**: High-performance media conversion tools.
 
-### 📥 DOWNLOADER
-- **song**: Download audio from YouTube
-- **ytvideo**: Download video from YouTube
-- **tiktok**: Download TikTok videos
-- **lyrics**: Get lyrics of a song
-- **facebook**: Download Facebook videos (Currently undergoing maintenance)
-- **instagram**: Download Instagram posts/reels (Currently undergoing maintenance)
-- **igs**: Download Instagram Stories (Currently undergoing maintenance)
+### 📥 MEDIA & DOWNLOADS (Public Menu)
+- **song, ytvideo**: High-quality YouTube downloader.
+- **tiktok**: Watermark-free TikTok downloader.
+- **lyrics, weather, translate, calc**: Essential daily utilities.
+- **1917 ... thunder**: 20+ Premium professional text effects.
 
-### 🛠️ UTILITIES
-- **weather**: Get weather for a city
-- **translate**: Translate text to different languages
-- **calc**: Calculate math expressions
-- **qr**: Generate QR code from text
-- **ssweb**: Take a screenshot of a website
-- **ping**: Check system latency
-- **uptime**: Show how long the bot has been running
-- **botinfo**: Display information about the bot
-- **groupinfo**: Show group information
-- **groupstats**: Show today's group chat statistics
-- **myactivity**: Check your personal activity stats
-
-### 🔞 ANIME (SFW/NSFW)
-- **waifu, neko, konachan, random**: SFW Anime images
-- **hwaifu, hneko, loli, megumin, milf**: NSFW Anime images (Requires appropriate permissions)
-
-### 👑 OWNER ONLY
-- **mode**: Toggle between Public/Self mode
-- **prefix**: Change the bot global prefix
-- **broadcast**: Send message to all chats
-- **block/unblock**: Manage blocked users
-- **setbotname/setbotpp**: Customize bot identity
-- **restart/update**: System maintenance and updates
+### 👑 SYSTEM CONTROL (Owner Menu)
+- **mode**: Toggle between Public and Self (Private) operation.
+- **prefix**: Change the global system command prefix.
+- **broadcast**: Official announcement system to all chats.
+- **restart, update**: One-touch system maintenance and framework updates.
+- **setbotname, setbotpp**: Live identity and profile customization.
 
 ---
 
-# 🛡️ Advanced Anti-Tamper & Security
+# 🛡️ Security & Integrity Audit
 
-EDBOTS V3 is built with a multi-layered security architecture:
+EDBOT AI SYSTEM is hardened with a multi-layered security architecture:
 
-- **Integrated Anti-Tamper System:** Active monitoring for critical file modifications.
-- **Immutable Developer Metadata:** Cryptographically verified identities.
-- **Runtime Integrity Audit:** Exhaustive self-audit on every startup.
-- **Secure Sandboxed Execution:** Hardened environment for command execution.
-- **Global Error Shielding:** Prevents crashes from unexpected errors.
+- **Integrated RBAC Engine:** Active permission monitoring for every command call.
+- **Immutable Developer Metadata:** Cryptographically verified system identities.
+- **Self-Repairing Loader:** Validates command integrity on every startup.
+- **Session Protection:** Encrypted authentication storage with backup mechanisms.
 
 ---
 
-# 🛠️ Installation & Setup
+# 🛠️ Installation & Deployment
 
-Follow these steps to get **EDBOT AI** running on your environment (Termux, Linux, or Windows):
-
-### 1. Install Dependencies
-Ensure you have **Node.js 18+** and **FFmpeg** installed on your system.
+### 1. Requirements
+Ensure **Node.js 18+** and **FFmpeg** are installed.
 ```bash
 npm install
 ```
 
 ### 2. Configuration
-- Edit `config.js` to set your owner numbers and bot preferences.
-- Create a `.env` file based on `.env.example` if you need to set environment-specific variables.
+Edit `config.js` to set your primary owner number and system preferences.
 
-### 3. Start the Bot
+### 3. Execution
 ```bash
 npm start
 ```
-Upon the first run, you will be prompted to choose between **QR Code** or **Pairing Code** for authentication.
+Authentication supports both **QR Code** and **Pairing Code** methods.
 
 ---
 
-# 🏗️ Modular Architecture
+# 🏗️ System Architecture
 
 ```text
-edbots/
-├── core/                # [ENGINE] Optimized Baileys connection and routing
-├── commands/            # [MODULES] 111+ Categorized commands in subfolders
-├── config/              # [CONFIG] User-editable bot preferences
-├── utils/               # [HELPERS] Reusable system and media utilities
-├── data/                # [DATA] Dynamic command metadata and overrides
-├── session/             # [DATA] Encrypted authentication storage
-└── index.js             # [ENTRY] Secure initialization point
+edbots-system/
+├── core/                # [ENGINE] RBAC-Hardened message handler and router
+├── commands/            # [MODULES] 111+ Categorized role-based commands
+│   ├── admin/           # Admin-only moderation tools
+│   ├── owner/           # Owner-only system controls
+│   ├── group/           # Group-specific utilities
+│   └── ...              # Public categories (AI, Media, Fun, etc.)
+├── config/              # [CONFIG] User-editable system preferences
+├── utils/               # [HELPERS] Anti-ban, media, and security utilities
+├── database/            # [DATA] Persistent JSON-based system storage
+└── index.js             # [ENTRY] Secure framework initialization point
 ```
 
 ---
 
-# ⚖️ Disclaimer
+# ⚖️ Disclaimer & Usage Policy
 
-**EDBOT AI** is an independent WhatsApp automation software developed by **Smart Tech Programming**.
+**EDBOT AI SYSTEM** is an independent automation framework developed by **Smart Tech Programming**. It is **not affiliated with, endorsed by, or connected** to WhatsApp or Meta Platforms, Inc.
 
-This project is **not affiliated with, endorsed by, sponsored by, or officially connected** to WhatsApp, Meta Platforms, Inc., or any of their subsidiaries or affiliates. WhatsApp and Meta are registered trademarks of their respective owners. All product names, logos, and brands are the property of their respective holders.
-
-EDBOT AI operates through user-authorized linked-device sessions and does not modify, reverse engineer, or distribute official WhatsApp source code. Users are solely responsible for how they use this software. EDBOT AI must not be used for spam, fraud, bulk unsolicited messaging, phishing, impersonation, or any unlawful activity.
-
-The developer assumes no responsibility for misuse, account restrictions, suspension, or damages resulting from improper use of this software.
+Users are solely responsible for their usage of this software. EDBOT AI SYSTEM must not be used for spam, unauthorized bulk messaging, or any unlawful activity. The developer assumes no responsibility for account restrictions or damages resulting from improper use.
 
 ---
 
-# 🛡️ Responsible Usage Policy
+# 👨‍💻 Development & Support
 
-To reduce account risk and ensure safe automation:
-
-- **Avoid bulk or unsolicited messaging**
-- **Respect user privacy and consent**
-- **Use message delays and cooldowns**
-- **Avoid abusive automation in groups**
-- **Do not impersonate individuals, businesses, or official services**
-
-EDBOT AI is designed for controlled automation, productivity, and assistant-based workflows.
-
----
-
-# 👨‍💻 Developer & Support
-
-- **Lead Developer:** Edun Oluwadarasimi David
-- **Email:** [davidedun2010@gmail.com](mailto:davidedun2010@gmail.com)
+- **Lead Architect:** Edun Oluwadarasimi David
+- **Framework Support:** [davidedun2010@gmail.com](mailto:davidedun2010@gmail.com)
+- **GitHub:** [https://github.com/EDBOTS](https://github.com/EDBOTS)
 
 ---
 
 # 📜 License
 
-This software is **Proprietary and Private**. Unauthorized redistribution, modification, or reverse engineering of this software is strictly prohibited. All rights reserved by the original developer.
+This software is **Proprietary and Private**. Unauthorized redistribution, modification, or reverse engineering is strictly prohibited. All rights reserved by the original developer.
 
 <div align="center">
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:2c5364,50:203a43,100:0f2027&height=120&section=footer"/>
 
-### EDBOT AI • Independent Automation Tool • Not affiliated with WhatsApp or Meta
-### Built with Precision • Hardened for Security • Powered by Baileys MD
+### EDBOT AI SYSTEM • Intelligent Automation Engine • Built by Smart Tech Programming
+### Professional Framework • Hardened for Security • Powered by Baileys MD
 
 </div>

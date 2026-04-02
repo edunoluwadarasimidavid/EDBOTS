@@ -47,13 +47,27 @@ const loadCommands = () => {
             const cmd = require(filePath);
 
             if (cmd && cmd.name) {
-                // If category is not set, use the folder name as category
+                // 1. CATEGORY NORMALIZATION
                 if (!cmd.category) {
                     const relativePath = path.relative(commandsPath, filePath);
                     const parts = relativePath.split(path.sep);
                     cmd.category = parts.length > 1 ? parts[0] : 'general';
                 }
 
+                // 2. METADATA NORMALIZATION (PRODUCTION-SAFE DEFAULTS)
+                const cat = cmd.category.toLowerCase();
+                
+                // Set defaults if missing
+                if (cmd.ownerOnly === undefined) cmd.ownerOnly = (cat === 'owner' || !!cmd.isOwner);
+                if (cmd.adminOnly === undefined) cmd.adminOnly = (cat === 'admin' || !!cmd.isAdmin);
+                if (cmd.groupOnly === undefined) cmd.groupOnly = (cat === 'group' || !!cmd.isGroup);
+
+                // Backwards compatibility for the engine (which uses isOwner, isAdmin, isGroup)
+                cmd.isOwner = cmd.ownerOnly;
+                cmd.isAdmin = cmd.adminOnly;
+                cmd.isGroup = cmd.groupOnly;
+
+                // 3. REGISTRATION
                 commands.set(cmd.name.toLowerCase(), cmd);
                 count++;
 
@@ -62,8 +76,6 @@ const loadCommands = () => {
                         commands.set(alias.toLowerCase(), cmd);
                     });
                 }
-            } else {
-                // Not a valid command file (doesn't export name)
             }
         } catch (err) {
             const fileName = path.basename(filePath);
@@ -73,10 +85,6 @@ const loadCommands = () => {
     });
 
     console.log(`\x1b[32m[SYSTEM] Successfully loaded ${count} commands.\x1b[0m`);
-    if (skipped.length > 0) {
-        console.warn(`\x1b[33m[SYSTEM] Skipped ${skipped.length} broken commands.\x1b[0m`);
-    }
-
     return commands;
 };
 

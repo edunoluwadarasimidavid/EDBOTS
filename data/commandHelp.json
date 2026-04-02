@@ -41,6 +41,12 @@
     "permission": "Everyone",
     "example": ".weather Lagos"
   },
+  "premium": {
+    "description": "Purchase premium to unlock anti-ban limits, premium commands, and group features for this bot instance.",
+    "usage": ".premium",
+    "permission": "Everyone / Owner",
+    "example": ".premium"
+  },
   "update": {
     "description": "Automatically increments the bot version and reloads the menu.",
     "usage": ".update",

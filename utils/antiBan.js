@@ -4,26 +4,57 @@
  * Implements tiered rate limiting and human behavior simulation.
  */
 
+const axios = require('axios');
 const config = require('../config');
 const { randomDelay, delay } = require('../src/utils/delay');
+const { BACKEND_BASE_URL } = require('../config/backendUrl');
 
 class HighGradeAntiBan {
     constructor() {
-        this.userState = new Map(); // JID -> { lastMessageTime, messageCount, lastResponseTime }
+        this.userState = new Map(); // JID -> { lastMessageTime, messageCount, lastResponseTime, isPremium, lastPremiumCheck }
         this.globalLastMessageTime = 0;
         this.sessionStartTime = Date.now();
         this.totalMessagesSent = 0;
     }
 
     /**
+     * Checks premium status from backend (with local caching for 5 mins)
+     */
+    async checkPremium(jid) {
+        const userId = jid.split('@')[0];
+        const state = this.userState.get(jid) || {};
+        const now = Date.now();
+
+        // Use cache if checked in the last 5 minutes
+        if (state.lastPremiumCheck && (now - state.lastPremiumCheck < 300000)) {
+            return state.isPremium;
+        }
+
+        try {
+            const res = await axios.get(`${BACKEND_BASE_URL}/api/premium/status?userId=${userId}`, { timeout: 2000 });
+            const isPremium = !!res.data.isPremium;
+            state.isPremium = isPremium;
+            state.lastPremiumCheck = now;
+            this.userState.set(jid, state);
+            return isPremium;
+        } catch (e) {
+            // If backend is down, default to false (safe mode)
+            return state.isPremium || false;
+        }
+    }
+
+    /**
      * Determines if the bot should respond to a message.
      * Tiered limits:
-     * - Privileged (Owner/Admin): 40 msgs/min (High safety)
+     * - Premium/Owner: 80 msgs/min (Unlock peak safety)
+     * - Privileged (Admin): 40 msgs/min (High safety)
      * - Regular Users: 20 msgs/min (Standard safety)
      */
     async shouldRespond(jid, isCmd = false, isPrivileged = false) {
         const now = Date.now();
         const state = this.userState.get(jid) || { lastMessageTime: 0, messageCount: 0, lastResponseTime: 0 };
+        
+        const isPremium = await this.checkPremium(jid);
 
         // 1. Reset user count if they haven't messaged in 1 minute
         if (now - state.lastMessageTime > 60000) {
@@ -31,15 +62,17 @@ class HighGradeAntiBan {
         }
 
         // 2. Tiered Rate Limiting
-        const limit = isPrivileged ? 40 : 20;
+        let limit = 20; // Default
+        if (isPremium || isPrivileged === 'owner') limit = 80;
+        else if (isPrivileged) limit = 40;
 
         if (state.messageCount >= limit) {
-            console.warn(`[ANTI-BAN] Rate limit hit for ${jid} (${isPrivileged ? 'Privileged' : 'Regular'}). Ignoring.`);
+            console.warn(`[ANTI-BAN] Rate limit hit for ${jid} (${isPremium ? 'Premium' : isPrivileged ? 'Admin' : 'Regular'}). Ignoring.`);
             return false;
         }
 
-        // 3. Command-specific cooldown: 1.2s for privileged, 2s for others
-        const cooldown = isPrivileged ? 1200 : 2000;
+        // 3. Command-specific cooldown
+        const cooldown = (isPremium || isPrivileged === 'owner') ? 800 : isPrivileged ? 1200 : 2000;
         if (isCmd && now - state.lastResponseTime < cooldown) {
             return false;
         }
