@@ -14,6 +14,10 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 
+# other
+edbot-premium-server/
+session_backup_*/
+
 # Session and Database files
 session/*
 database/
@@ -30,3 +34,8 @@ coverage/
 
 .gemini/
 gha-creds-*.json
+
+
+
+
+
