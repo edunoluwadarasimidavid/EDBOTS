@@ -8,16 +8,17 @@ module.exports = {
   
   async execute(sock, msg, args, extra) {
     try {
-      const { loadCommands } = require('../../utils/commandLoader');
-      const commands = loadCommands();
-
+      // Use the already-loaded commands map from context instead of reloading
+      const commands = extra.commands;
+      
       // Count only main commands (ignore aliases)
       const mainCommands = new Set();
-      commands.forEach((cmd, name) => {
-        if (cmd.name === name) mainCommands.add(name);
-      });
+      if (commands instanceof Map) {
+        commands.forEach((cmd, name) => {
+          if (cmd.name === name) mainCommands.add(name);
+        });
+      }
 
-      // Build the impressive info message
       const response = `
 🧑‍💻 *Owner Info - Edun Oluwadarasimi David*
 

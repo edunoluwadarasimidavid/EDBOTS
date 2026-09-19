@@ -4,7 +4,8 @@ const path = require('path');
 
 // --- SECURITY CONFIGURATION ---
 const ADMIN_FILE = 'admin.key';
-const ADMIN_PASS = '123edbot123';
+// Admin password loaded from environment variable for security
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CORE_DIR = path.join(__dirname, '../core');
 const HASH_FILE = path.join(__dirname, '../.hashes.json');
 

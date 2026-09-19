@@ -8,18 +8,14 @@ require("dotenv").config();
 const developer = require("./core/developer");
 const fs = require("fs");
 const path = require("path");
+const { initializeCrashProtection } = require("./utils/crashProtector");
+const { startCleanup } = require("./utils/cleanup");
 
 /**
- * Global Process Safety
- * Prevents the bot from crashing due to unhandled errors.
+ * Global Process Safety - Single consolidated crash handler
+ * Uses the crashProtector module for consistency
  */
-process.on("uncaughtException", (err) => {
-    console.error("\x1b[31m[CRITICAL] Uncaught Exception:\x1b[0m", err.message);
-});
-
-process.on("unhandledRejection", (reason, promise) => {
-    console.error("\x1b[31m[CRITICAL] Unhandled Rejection:\x1b[0m", reason);
-});
+initializeCrashProtection();
 
 /**
  * Pre-Flight Checks
@@ -48,9 +44,12 @@ function ensureDirectories() {
         // 2. Environment Setup
         ensureDirectories();
 
+        // 3. Start temp file cleanup system
+        startCleanup();
+
         console.log("\x1b[34m[INFO] Initializing EDBOTS System...\x1b[0m");
         
-        // 3. Start Bot Engine (Commands are loaded inside engine/connection)
+        // 4. Start Bot Engine
         await startBot();
 
     } catch (error) {

@@ -40,4 +40,23 @@ async function clearTemp() {
     } catch (e) {}
 }
 
-module.exports = { ensureTempDir, autoDelete, clearTemp, TEMP_DIR };
+/**
+ * Synchronous temp directory getter
+ */
+function getTempDir() {
+    return TEMP_DIR;
+}
+
+/**
+ * Synchronously delete a temp file
+ */
+function deleteTempFile(filePath) {
+    try {
+        const fsSync = require('fs');
+        if (fsSync.existsSync(filePath)) {
+            fsSync.unlinkSync(filePath);
+        }
+    } catch (e) {}
+}
+
+module.exports = { ensureTempDir, autoDelete, clearTemp, getTempDir, deleteTempFile, TEMP_DIR };

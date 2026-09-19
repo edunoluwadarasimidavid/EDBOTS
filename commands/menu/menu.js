@@ -15,8 +15,7 @@ module.exports = {
     const pushName = msg.pushName || "User";
     const runtime = getFormattedUptime() || "0h 0m 0s";
     
-    // DYNAMIC OWNER RESOLUTION (Step 4 & REQUIREMENT: OWNER NAME FIX)
-    // We try to get the connected session owner's name
+    // DYNAMIC OWNER RESOLUTION
     const ownerPushName = sock?.user?.name || config.ownerName?.[0] || "EDBOTS Owner";
     const ownerNumber = sock?.user?.id ? sock.user.id.split("@")[0].split(":")[0] : config.owner?.[0];
     const ownerDisplayName = ownerPushName || ownerNumber;
@@ -30,22 +29,21 @@ module.exports = {
 
     try {
       // 2. BUILD A FILTER ENGINE (STRICT CONTEXT RULES)
+      // Use the already-loaded commands map from context instead of reloading
       const uniqueCommands = commands instanceof Map ? new Set(commands.values()) : new Set();
       
       const visibleCommands = Array.from(uniqueCommands).filter(cmd => {
         // GLOBAL RBAC Rules
         if (cmd.ownerOnly && !isOwner) return false;
-        if (cmd.adminOnly && !isAdmin && !isOwner) return false; // Owners can see admin cmds
+        if (cmd.adminOnly && !isAdmin && !isOwner) return false;
         if (cmd.groupOnly && !isGroup) return false;
 
         // PRIVATE CHAT SPECIFIC EXCLUSIONS
         if (!isGroup) {
           const cat = (cmd.category || "").toLowerCase();
-          const privateSafeCategories = ['ai', 'fun', 'general', 'media', 'textmaker', 'utility', 'menu', 'system'];
           const restrictedInPrivate = ['admin', 'group', 'moderation'];
           
           if (restrictedInPrivate.includes(cat)) return false;
-          // Even if category is 'general', check if command specifically needs a group (redundant but safe)
           if (cmd.groupOnly) return false;
         }
 
@@ -58,13 +56,12 @@ module.exports = {
         const category = (cmd.category || "GENERAL").toUpperCase().trim();
         if (!grouped[category]) grouped[category] = [];
         
-        // Deduplicate command names
         if (!grouped[category].includes(cmd.name)) {
           grouped[category].push(cmd.name);
         }
       });
 
-      // 4. HEADER CONSTRUCTION (EXACT REQUESTED FORMAT)
+      // 4. HEADER CONSTRUCTION
       const menuTitle = isGroup ? "GROUP SMART MENU" : "PUBLIC SMART MENU";
       
       let menuText = `╭━━━〔 ${menuTitle} 〕━━━⬣\n`;
@@ -80,7 +77,6 @@ module.exports = {
       const sortedCategories = Object.keys(grouped).sort();
 
       for (const cat of sortedCategories) {
-        // Double check for Private Chat: skip group/admin categories even if they somehow got here
         if (!isGroup && ['ADMIN', 'GROUP', 'MODERATION'].includes(cat)) continue;
 
         menuText += `╭━━━〔 ${cat} 〕━━━⬣\n`;
@@ -109,7 +105,7 @@ module.exports = {
       }, { quoted: msg });
 
     } catch (err) {
-      console.error("[REFAC MENU ERROR]", err);
+      console.error("[MENU ERROR]", err);
       try {
         await context.reply("❌ Error rendering system menu. Contact admin.");
       } catch (e) {}

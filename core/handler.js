@@ -18,6 +18,7 @@ const { addMessage } = require('../utils/groupstats');
 const antiBan = require('../utils/antiBan');
 const { askAI } = require('../utils/aiEngine');
 const { normalizeNumber } = require('../utils/helpers');
+const modeManager = require('../utils/modeManager');
 
 // Group metadata cache
 const groupMetadataCache = new Map();
@@ -243,6 +244,14 @@ const handleMessage = async (sock, msg, commands) => {
                     return context.reply('⛔ This command is disabled in this group.');
                 }
 
+                // 6. MODE CHECK - Verify command is allowed in current mode
+                const currentMode = modeManager.getMode(from);
+                const cmdCategory = (command.category || 'general').toLowerCase();
+                if (!modeManager.isAllowed(currentMode, cmdCategory) && !context.isOwner) {
+                    console.log(`[MODE BLOCK] Sender: ${senderRaw} Command: ${commandName} Category: ${cmdCategory} Mode: ${currentMode}`);
+                    return context.reply(`⛔ This command is not available in *${currentMode.toUpperCase()}* mode.`);
+                }
+
                 try {
                     console.log(`[SYSTEM] Executing command: ${commandName}`);
                     
@@ -268,14 +277,21 @@ const handleMessage = async (sock, msg, commands) => {
         // AI Logic...
         if (fullBody.toLowerCase().startsWith('ai:')) {
             const question = fullBody.slice(3).trim();
-            const answer = await askAI(question);
+            const currentMode = modeManager.getMode(from);
+            const { aiChat } = require('../utils/aiProviders');
+            // Try new multi-provider AI first, fallback to Puter
+            let answer = await aiChat(question, currentMode === 'business' ? 'business' : 'personal');
+            if (!answer) answer = await askAI(question);
             if (answer && answer !== "NOT_CONNECTED") {
                 return await context.reply(answer);
             }
         }
 
         if (config.autoReply && !isGroup && !isCmd && !fromMe) {
-            const answer = await askAI(fullBody);
+            const currentMode = modeManager.getMode(from);
+            const { aiChat } = require('../utils/aiProviders');
+            let answer = await aiChat(fullBody, currentMode === 'business' ? 'business' : 'personal');
+            if (!answer) answer = await askAI(fullBody);
             if (answer && answer !== "NOT_CONNECTED") {
                 return await context.reply(answer);
             }

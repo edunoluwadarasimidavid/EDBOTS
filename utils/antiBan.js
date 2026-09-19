@@ -1,101 +1,69 @@
 /**
  * @file antiBan.js
- * @description High-Grade Anti-Ban System for EDBOTS with Premium Usage Tracking.
+ * @description High-Grade Anti-Ban System for EDBOTS.
+ * Human-like behavior simulation with no external API calls.
  */
 
-const axios = require('axios');
 const config = require('../config');
-const { randomDelay, delay } = require('../src/utils/delay');
-const { BACKEND_BASE_URL } = require('../config/backendUrl');
-const moment = require('moment-timezone');
+
+// Dynamic delay that mimics human typing patterns
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 class HighGradeAntiBan {
     constructor() {
-        this.userState = new Map(); // JID -> { lastMessageTime, messageCount, lastResponseTime, isPremium, lastPremiumCheck }
+        this.userState = new Map(); // JID -> { lastMessageTime, messageCount, lastResponseTime }
         this.globalLastMessageTime = 0;
         this.totalMessagesSent = 0;
+        // Cleanup stale entries every 5 minutes
+        setInterval(() => this.cleanupStaleEntries(), 5 * 60 * 1000);
     }
 
     /**
-     * Checks premium status & usage from backend
-     * Triggers notifications for activation and limit exhaustion
+     * Remove entries that haven't been active in 2 minutes
      */
-    async checkPremiumAndUsage(sock, jid, isCommand = false) {
-        const userId = jid.split('@')[0];
-        const state = this.userState.get(jid) || {};
+    cleanupStaleEntries() {
         const now = Date.now();
-
-        // Increment usage only if it's a command
-        const increment = isCommand ? 'true' : 'false';
-
-        try {
-            const res = await axios.get(`${BACKEND_BASE_URL}/api/premium/status?userId=${userId}&increment=${increment}`, { timeout: 3000 });
-            const data = res.data;
-
-            // 1. Handle Activation Notification (Only once per purchase)
-            if (data.activationNotify) {
-                const expiry = moment(data.activationNotify.expiresAt).format('LLLL');
-                await sock.sendMessage(jid, { 
-                    text: `✅ *Premium Activated Successfully!*\n\n` +
-                          `💎 *Plan:* ${data.activationNotify.plan.toUpperCase()}\n` +
-                          `🗓️ *Expires:* ${expiry}\n\n` +
-                          `Thank you for supporting EDBOTS! 🚀`
-                });
+        const STALE_THRESHOLD = 2 * 60 * 1000;
+        for (const [jid, state] of this.userState) {
+            if (now - state.lastMessageTime > STALE_THRESHOLD) {
+                this.userState.delete(jid);
             }
-
-            // 2. Handle Limit Exhaustion Notification
-            if (isCommand && data.isExhausted) {
-                await sock.sendMessage(jid, {
-                    text: `❌ *Usage Limit Reached*\n\n` +
-                          `Your ${data.plan} daily limit has been exhausted.\n\n` +
-                          `Upgrade to premium to continue using advanced features.\n` +
-                          `Use *.premium* to view plans.`
-                });
-                return { allowed: false, ...data };
-            }
-
-            // Sync local cache
-            state.isPremium = data.isPremium;
-            state.lastPremiumCheck = now;
-            this.userState.set(jid, state);
-
-            return { allowed: true, ...data };
-        } catch (e) {
-            console.error('[ANTI-BAN] Backend Check Failed:', e.message);
-            return { allowed: true, isPremium: state.isPremium || false, plan: 'free' };
         }
     }
 
     /**
      * Standard Anti-Ban shouldRespond check
+     * No external API calls - purely local rate limiting
      */
     async shouldRespond(sock, jid, isCmd = false, isPrivileged = false) {
         const now = Date.now();
-        const state = this.userState.get(jid) || { lastMessageTime: 0, messageCount: 0, lastResponseTime: 0 };
-        
-        // Premium and Usage Sync
-        const usage = await this.checkPremiumAndUsage(sock, jid, isCmd);
-        if (!usage.allowed) return false;
+        const state = this.userState.get(jid) || {
+            lastMessageTime: 0,
+            messageCount: 0,
+            lastResponseTime: 0
+        };
 
-        const isPremium = usage.isPremium;
-
-        // Reset user count if they haven't messaged in 1 minute
+        // Reset user count if they haven't messaged in 60 seconds
         if (now - state.lastMessageTime > 60000) {
             state.messageCount = 0;
         }
 
-        // Tiered Rate Limiting
-        let limit = 20; 
-        if (isPremium || isPrivileged === 'owner') limit = 80;
-        else if (isPrivileged) limit = 40;
+        // Tiered Rate Limiting based on privilege
+        let limit = 20; // Free users: 20 messages/minute
+        if (isPrivileged === 'owner') limit = 100;
+        else if (isPrivileged) limit = 50;
 
         if (state.messageCount >= limit) {
-            console.warn(`[ANTI-BAN] Rate limit hit for ${jid}`);
+            console.warn(`[ANTI-BAN] Rate limit hit for ${jid} (${state.messageCount}/${limit})`);
             return false;
         }
 
-        // Command cooldown
-        const cooldown = (isPremium || isPrivileged === 'owner') ? 800 : isPrivileged ? 1200 : 2000;
+        // Command cooldown - prevent rapid command firing
+        // Owner: 800ms, Admin: 1200ms, User: 2500ms
+        const cooldown = isPrivileged === 'owner' ? 800
+            : isPrivileged ? 1200
+            : 2500;
+
         if (isCmd && now - state.lastResponseTime < cooldown) {
             return false;
         }
@@ -103,23 +71,46 @@ class HighGradeAntiBan {
         state.messageCount++;
         state.lastMessageTime = now;
         this.userState.set(jid, state);
+
         return true;
     }
 
     /**
-     * Simulate Typing...
+     * Simulate human typing behavior.
+     * Uses WPM-based calculation so typing time matches message length naturally.
+     * Short messages get short delays; long messages get proportionally longer ones.
      */
-    async simulateHumanBehavior(sock, jid, responseText = "") {
-        const charCount = responseText.length || 20;
-        const totalTypingMs = Math.min(Math.max(1000, charCount * 30), 4000);
+    async simulateHumanBehavior(sock, jid, responseText = '') {
+        try {
+            const charCount = (responseText || '').length || 20;
 
-        await sock.sendPresenceUpdate('composing', jid);
-        await delay(totalTypingMs);
-        await sock.sendPresenceUpdate('paused', jid);
-        
-        const state = this.userState.get(jid) || { lastMessageTime: 0, messageCount: 0, lastResponseTime: 0 };
-        state.lastResponseTime = Date.now();
-        this.userState.set(jid, state);
+            // Simulate human typing speed: ~60-120 WPM → ~3-6 chars/sec
+            // Average ~4.5 chars/sec = ~222ms per character
+            // But we cap it: min 1s, max 5s for very long messages
+            const avgCharsPerMs = 0.004; // ~250 chars per second typing speed
+            const typingDuration = Math.min(Math.max(1000, charCount / avgCharsPerMs * 0.3), 5000);
+
+            // Add slight randomness to make it feel more natural (±15%)
+            const jitter = typingDuration * (0.85 + Math.random() * 0.3);
+            const finalDelay = Math.round(jitter);
+
+            // Show "typing..." while composing
+            await sock.sendPresenceUpdate('composing', jid);
+            await delay(finalDelay);
+            await sock.sendPresenceUpdate('paused', jid);
+
+            // Update last response time
+            const state = this.userState.get(jid) || {
+                lastMessageTime: 0,
+                messageCount: 0,
+                lastResponseTime: 0
+            };
+            state.lastResponseTime = Date.now();
+            this.userState.set(jid, state);
+        } catch (err) {
+            // Non-critical: don't crash if presence update fails
+            console.error('[ANTI-BAN] Presence update error:', err.message);
+        }
     }
 }
 
