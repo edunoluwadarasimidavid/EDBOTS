@@ -62,6 +62,14 @@ const loadCommands = () => {
                 if (cmd.adminOnly === undefined) cmd.adminOnly = (cat === 'admin' || !!cmd.isAdmin);
                 if (cmd.groupOnly === undefined) cmd.groupOnly = (cat === 'group' || !!cmd.isGroup);
 
+                // VISIBILITY DEFAULT: public unless marked private/hidden
+                // 'public' = shown to everyone, 'private' = owner/admin only, 'hidden' = never shown in menus
+                if (!cmd.visibility) {
+                    if (cmd.ownerOnly) cmd.visibility = 'private';
+                    else if (cmd.hidden) cmd.visibility = 'hidden';
+                    else cmd.visibility = 'public';
+                }
+
                 // Backwards compatibility for the engine (which uses isOwner, isAdmin, isGroup)
                 cmd.isOwner = cmd.ownerOnly;
                 cmd.isAdmin = cmd.adminOnly;

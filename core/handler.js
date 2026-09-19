@@ -274,25 +274,21 @@ const handleMessage = async (sock, msg, commands) => {
             }
         }
 
-        // AI Logic...
+        // AI Logic - uses unified engine (Puter primary, multi-provider fallback)
         if (fullBody.toLowerCase().startsWith('ai:')) {
             const question = fullBody.slice(3).trim();
             const currentMode = modeManager.getMode(from);
-            const { aiChat } = require('../utils/aiProviders');
-            // Try new multi-provider AI first, fallback to Puter
-            let answer = await aiChat(question, currentMode === 'business' ? 'business' : 'personal');
-            if (!answer) answer = await askAI(question);
-            if (answer && answer !== "NOT_CONNECTED") {
+            const answer = await askAI(question, currentMode === 'business' ? 'business' : 'personal');
+            if (answer && !answer.startsWith('⚠️')) {
                 return await context.reply(answer);
             }
         }
 
+        // Auto-reply: respond to non-command messages with AI
         if (config.autoReply && !isGroup && !isCmd && !fromMe) {
             const currentMode = modeManager.getMode(from);
-            const { aiChat } = require('../utils/aiProviders');
-            let answer = await aiChat(fullBody, currentMode === 'business' ? 'business' : 'personal');
-            if (!answer) answer = await askAI(fullBody);
-            if (answer && answer !== "NOT_CONNECTED") {
+            const answer = await askAI(fullBody, currentMode === 'business' ? 'business' : 'personal');
+            if (answer && !answer.startsWith('⚠️')) {
                 return await context.reply(answer);
             }
         }
