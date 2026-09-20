@@ -19,6 +19,8 @@ const antiBan = require('../utils/antiBan');
 const { askAI } = require('../utils/aiEngine');
 const { normalizeNumber } = require('../utils/helpers');
 const modeManager = require('../utils/modeManager');
+const smartAutoReply = require('../utils/smartAutoReply');
+const advancedAntiBan = require('../utils/advancedAntiBan');
 
 // Group metadata cache
 const groupMetadataCache = new Map();
@@ -284,12 +286,25 @@ const handleMessage = async (sock, msg, commands) => {
             }
         }
 
-        // Auto-reply: respond to non-command messages with AI
-        if (config.autoReply && !isGroup && !isCmd && !fromMe) {
-            const currentMode = modeManager.getMode(from);
-            const answer = await askAI(fullBody, currentMode === 'business' ? 'business' : 'personal');
-            if (answer && !answer.startsWith('⚠️')) {
-                return await context.reply(answer);
+        // Auto-reply: Smart AI auto-reply with keyword learning
+        if (!isGroup && !isCmd && !fromMe) {
+            // Try smart auto-reply first (keyword matching + AI learning)
+            const smartReply = await smartAutoReply.processMessage(from, fullBody, {
+                businessHours: '9AM - 6PM',
+                greetingMessage: 'Hello! How can we help?'
+            });
+
+            if (smartReply) {
+                return await context.reply(smartReply.response);
+            }
+
+            // Fallback to regular auto-reply if enabled
+            if (config.autoReply) {
+                const currentMode = modeManager.getMode(from);
+                const answer = await askAI(fullBody, currentMode === 'business' ? 'business' : 'personal');
+                if (answer && !answer.startsWith('⚠️')) {
+                    return await context.reply(answer);
+                }
             }
         }
 

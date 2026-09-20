@@ -1,0 +1,40 @@
+{
+  "messages": {},
+  "contacts": {},
+  "commands": {},
+  "dailyStats": {},
+  "weeklyStats": {},
+  "sentiment": {
+    "positive": 0,
+    "negative": 0,
+    "neutral": 0
+  },
+  "peakHours": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "totalMessages": 0,
+  "totalContacts": {}
+}

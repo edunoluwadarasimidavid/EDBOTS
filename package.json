@@ -1,6 +1,6 @@
 {
   "name": "edbots-md",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "EDBOTS - Advanced WhatsApp Multi-Device Bot powered by Baileys",
   "main": "index.js",
   "type": "commonjs",

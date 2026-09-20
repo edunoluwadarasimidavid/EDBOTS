@@ -18,7 +18,7 @@
 
 # 🌍 Overview
 
-**EDBOT AI SYSTEM** is a premium, industrial-grade WhatsApp automation framework with **built-in AI capabilities**. Built on **Baileys Multi-Device (MD)** and optimized for **Node.js 18+**, it features multi-provider AI, business tools, smart conversations, and 100+ commands.
+**EDBOT AI SYSTEM** is a premium, industrial-grade WhatsApp automation framework with **built-in AI capabilities**. Built on **Baileys Multi-Device (MD)** and optimized for **Node.js 18+**, it features multi-provider AI, business tools, smart conversations, version management with rollback, and 100+ commands.
 
 ---
 
@@ -33,11 +33,12 @@
 - **Ollama** - Local AI support for privacy
 
 ### 💼 Business Mode
-- **Auto-Responder** - Smart auto-reply templates
+- **`.biz on/off`** - Quick business mode toggle
+- **Auto-Responder** - Smart AI auto-reply with keyword learning
 - **Product Catalog** - Manage products with QR codes
 - **Invoice Generator** - Create professional invoices
 - **Business AI** - Generate social posts, emails, ads
-- **Analytics** - Track group activity and insights
+- **Analytics Dashboard** - Track messages, contacts, and insights
 
 ### 🧠 Smart Features
 - **Conversation Memory** - Remembers context across chats
@@ -51,6 +52,34 @@
 - **Business** 💼 - Professional business tools
 - **Group** 👥 - Group management and moderation
 - **Owner** 👑 - Full admin control
+
+### 🔄 Version Management
+- **`.updates`** - View version info and changelog
+- **`.rollback`** - Rollback to previous versions
+- **GitHub Releases** - Proper versioning with release notes
+- **Auto-Backup** - Automatic backup before updates
+
+### 🎮 Engaging Group Features
+- **Trivia Game** - 50+ questions with leaderboards
+- **Daily Challenges** - Complete tasks for points
+- **Weekly Challenges** - Big rewards for consistency
+- **Challenge Leaderboard** - Compete with group members
+
+### 🛡️ Advanced Anti-Ban System
+- **Human-Like Typing** - Variable speed based on message complexity
+- **Burst Protection** - Prevents rapid-fire messages
+- **Graduated Penalties** - Increasing cooldowns for violations
+- **Time-of-Day Awareness** - Different behavior at different hours
+- **Circuit Breaker** - Stops if too many errors occur
+
+### 📰 Free API Integrations
+- **Fun Facts** - Random interesting facts
+- **Jokes** - Programming and general jokes
+- **Quotes** - Inspirational quotes
+- **Horoscope** - Daily horoscope readings
+- **News Headlines** - Latest news from various categories
+- **Reddit Posts** - Content from Reddit communities
+- **Wikipedia** - Search and summaries
 
 ---
 
@@ -72,12 +101,19 @@
 ### 💼 Business Tools
 | Command | Description |
 |---------|-------------|
+| `.biz on/off` | Quick business mode toggle |
+| `.biz status` | View business settings |
+| `.biz welcome` | Configure welcome messages |
+| `.biz hours` | Set business hours |
+| `.biz greeting` | Set greeting message |
+| `.biz quickreply` | Toggle AI quick replies |
 | `.bizai social <topic>` | Generate social media posts |
 | `.bizai email <topic>` | Write professional emails |
 | `.bizai ad <topic>` | Create ad copy |
 | `.catalog add/list` | Product catalog management |
 | `.invoice` | Generate invoices |
 | `.autoresponder` | Business auto-reply system |
+| `.analytics` | Business analytics dashboard |
 | `.setmode business` | Switch to business mode |
 
 ### 🎮 Fun & Games
@@ -90,6 +126,14 @@
 | `.fortune` | Fortune cookie |
 | `.quote` | Inspirational quotes |
 | `.ship` | Ship two users |
+| `.fact` | Random fun fact |
+| `.fact joke` | Random joke |
+| `.fact quote` | Inspirational quote |
+| `.fact horoscope <sign>` | Daily horoscope |
+| `.fact catfact` | Cat fact |
+| `.fact dogfact` | Dog fact |
+| `.fact advice` | Life advice |
+| `.fact bored` | Activity suggestion |
 
 ### 🔧 Utility Tools
 | Command | Description |
@@ -104,10 +148,18 @@
 | `.convert` | Binary/Hex/Base64 converter |
 | `.shorten` | URL shortener |
 | `.contact` | Contact card generator |
+| `.news` | Latest news headlines |
+| `.news reddit` | Reddit posts |
+| `.news wiki` | Wikipedia summary |
 
 ### 🛡️ Admin & Group
 | Command | Description |
 |---------|-------------|
+| `.trivia` | Interactive trivia game |
+| `.trivia leaderboard` | Trivia leaderboard |
+| `.challenge daily` | Daily challenges |
+| `.challenge weekly` | Weekly challenges |
+| `.challenge progress` | Your challenge progress |
 | `.automod` | Auto-moderation tools |
 | `.spamfilter` | Anti-spam protection |
 | `.insights` | Group analytics |
@@ -124,6 +176,7 @@
 | `.backup` | Database backup |
 | `.broadcast` | Broadcast to all groups |
 | `.update` | System update |
+| `.notify` | Manage notifications & alerts |
 
 ### 📥 Media & Downloads
 | Command | Description |
@@ -134,15 +187,28 @@
 | `.sticker` | Image/video to sticker |
 | `.tts` | Text to speech |
 
+### 🔄 Version & Updates
+| Command | Description |
+|---------|-------------|
+| `.updates` | Show version info and changelog |
+| `.updates check` | Check for updates |
+| `.updates history` | Version history |
+| `.updates changelog` | Full changelog |
+| `.rollback` | Show available versions |
+| `.rollback <version>` | Rollback to version |
+| `.rollback confirm` | Confirm rollback |
+
 ---
 
 # 🛡️ Security & Integrity
 
 - **RBAC Engine** - 5-layer permission system
-- **Anti-Ban System** - WPM-based human simulation
+- **Advanced Anti-Ban** - Human-like behavior simulation
 - **Session Encryption** - Atomic write protection
 - **Audit Logging** - Real-time security alerts
 - **Self-Repair** - Automatic dependency validation
+- **Circuit Breaker** - Stops on consecutive errors
+- **Backup System** - Automatic backups before updates
 
 ---
 
@@ -186,23 +252,29 @@ edbots-system/
 │   └── engine.js            # Bot orchestrator
 ├── commands/                # [MODULES] 100+ commands
 │   ├── ai/                  # AI-powered commands
-│   ├── business/            # Business tools
+│   ├── business/            # Business tools (biz, analytics, catalog)
 │   ├── fun/                 # Games and entertainment
 │   ├── general/             # Public commands
-│   ├── group/               # Group management
+│   ├── group/               # Group management (trivia, challenges)
 │   ├── media/               # Media downloads
 │   ├── owner/               # Owner-only controls
-│   ├── utility/             # Utility tools
+│   ├── system/              # System commands (updates, rollback)
+│   ├── utility/             # Utility tools (news, crypto, etc.)
 │   └── textmaker/           # Text effects
 ├── utils/                   # [HELPERS] Core utilities
 │   ├── aiProviders.js       # Multi-provider AI system
 │   ├── aiEngine.js          # Unified AI engine
+│   ├── advancedAntiBan.js   # Advanced anti-ban system
+│   ├── smartAutoReply.js    # Smart auto-reply with learning
 │   ├── conversationMemory.js # Smart memory system
 │   ├── modeManager.js       # Mode switching
-│   ├── antiBan.js           # Anti-ban protection
+│   ├── versionManager.js    # Version management & rollback
+│   ├── notifications.js     # Smart notification system
+│   ├── freeApis.js          # Free API integrations
 │   └── commandLoader.js     # Command auto-loader
-├── database/                # [DATA] Persistent storage
+├── data/                    # [DATA] Persistent storage
 ├── config.js                # [CONFIG] Bot configuration
+├── bot_version.json         # [VERSION] Version info & changelog
 └── index.js                 # [ENTRY] Application entry
 ```
 
@@ -217,6 +289,38 @@ Commands have three visibility levels:
 | `public` | Shown to everyone in `.start` and `.menu` |
 | `private` | Only shown to owner/admin |
 | `hidden` | Never shown in menus |
+
+---
+
+# 🔄 Version Management
+
+### Viewing Version
+```bash
+.updates              # Show current version and changelog
+.updates check        # Check for updates from GitHub
+.updates history      # View version history
+.updates changelog    # Show detailed changelog
+```
+
+### Rolling Back
+```bash
+.rollback             # Show available versions
+.rollback 1.0.0       # Preview rollback to v1.0.0
+.rollback confirm 1.0.0  # Confirm and execute rollback
+```
+
+### Version Format
+```json
+{
+  "version": "2.0.0",
+  "codename": "Phoenix",
+  "changelog": [
+    { "type": "added", "description": "New feature" },
+    { "type": "fixed", "description": "Bug fix" },
+    { "type": "changed", "description": "Change description" }
+  ]
+}
+```
 
 ---
 
