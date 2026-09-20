@@ -14,14 +14,26 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 
-# other
-edbot-premium-server/
+# Session and Authentication
+session/
 session_backup_*/
+auth/
 
-# Session and Database files
-session/*
+# Database files
 database/
 *.db
+
+# Config (user data, not framework)
+data/config.json
+
+# Temp files
+temp/
+
+# Logs
+*.log
+
+# Other
+edbot-premium-server/
 
 # OS generated files
 .DS_Store

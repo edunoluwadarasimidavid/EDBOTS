@@ -4,8 +4,12 @@
   "description": "EDBOTS - Advanced WhatsApp Multi-Device Bot powered by Baileys",
   "main": "index.js",
   "type": "commonjs",
+  "bin": {
+    "edbots": "./src/cli/index.js"
+  },
   "scripts": {
     "start": "node index.js",
+    "cli": "node src/cli/index.js",
     "dev": "nodemon index.js",
     "postinstall": "node utils/selfRepair.js"
   },
@@ -14,7 +18,8 @@
     "whatsapp bot",
     "baileys md",
     "multi device",
-    "automation"
+    "automation",
+    "cli"
   ],
   "author": "Edun Oluwadarasimi David",
   "license": "MIT",
