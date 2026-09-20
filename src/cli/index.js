@@ -20,6 +20,9 @@
  *   restart     Restart the bot
  *   stop        Stop the bot
  *   update      Check for updates
+ *   logout      Disconnect WhatsApp & reset session
+ *   reset       Reset configuration to defaults
+ *   doctor      Diagnose common problems
  *   help        Show help
  */
 
@@ -61,6 +64,9 @@ const commands = {
     restart: () => require('./commands/restart'),
     stop: () => require('./commands/stop'),
     update: () => require('./commands/update'),
+    logout: () => require('./commands/logout'),
+    reset: () => require('./commands/reset'),
+    doctor: () => require('./commands/doctor'),
     help: () => { showHelp(); process.exit(0); },
 };
 
@@ -86,9 +92,16 @@ function showHelp() {
   \x1b[32msettings\x1b[0m           Manage bot settings
   \x1b[32mplugins\x1b[0m            List and manage plugins
   \x1b[32mlogs\x1b[0m               View bot logs
+  \x1b[32mlogs --follow\x1b[0m      Follow logs in real-time
   \x1b[32mrestart\x1b[0m            Restart the bot
   \x1b[32mstop\x1b[0m               Stop the bot gracefully
   \x1b[32mupdate\x1b[0m             Check for and apply updates
+  \x1b[32mupdate --apply\x1b[0m     Apply latest update
+  \x1b[32mlogout\x1b[0m             Disconnect WhatsApp & reset session
+  \x1b[32mlogout --force\x1b[0m     Logout without confirmation
+  \x1b[32mreset\x1b[0m              Reset configuration to defaults
+  \x1b[32mreset --all\x1b[0m        Reset config AND logout
+  \x1b[32mdoctor\x1b[0m             Diagnose common problems
   \x1b[32mhelp\x1b[0m               Show this help message
 
 \x1b[1mOPTIONS:\x1b[0m
@@ -100,6 +113,8 @@ function showHelp() {
   \x1b[36medbots start --qr\x1b[0m           Start with QR code
   \x1b[36medbots customize\x1b[0m            Configure the bot
   \x1b[36medbots status\x1b[0m               Check bot status
+  \x1b[36medbots logout\x1b[0m               Disconnect & re-pair later
+  \x1b[36medbots doctor\x1b[0m               Diagnose problems
 
 \x1b[1mQUICK START:\x1b[0m
   1. \x1b[36mnpm install -g edbots\x1b[0m

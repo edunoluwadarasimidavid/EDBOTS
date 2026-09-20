@@ -85,8 +85,30 @@ edbots restart            # Restart the bot
 edbots stop               # Stop the bot gracefully
 edbots update             # Check for updates
 edbots update --apply     # Apply latest update
+edbots logout             # Disconnect WhatsApp & reset session
+edbots logout --force     # Logout without confirmation
+edbots reset              # Reset configuration to defaults
+edbots reset --all        # Reset config AND logout
+edbots doctor             # Diagnose common problems
 edbots --version          # Show version
 edbots --help             # Show help
+```
+
+### Logging Out & Resetting
+
+```bash
+# Disconnect WhatsApp account (keeps your settings)
+edbots logout
+# After logout, `edbots start` asks for fresh pairing (QR or code)
+
+# Reset all configuration to factory defaults (keeps session)
+edbots reset
+
+# Full reset: configuration AND session
+edbots reset --all
+
+# Diagnose problems (Node, FFmpeg, deps, config, session)
+edbots doctor
 ```
 
 ### Interactive Configuration
