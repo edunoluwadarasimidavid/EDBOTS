@@ -28,6 +28,10 @@ let sock = null;
 let reconnectAttempts = 0;
 let commands = new Map();
 
+// Pairing-code state (reset per connection attempt)
+let pairingRequested = false;
+let pairingFailed = false;
+
 // Logger setup
 const logger = pino({ level: 'silent' });
 
@@ -45,6 +49,23 @@ const question = (text) => {
             resolve(answer.trim());
         });
     });
+};
+
+/**
+ * Display the pairing code prominently
+ */
+const showPairingCode = (code) => {
+    const formatted = (code || '').match(/.{1,4}/g)?.join('-') || code;
+    console.log('\n');
+    console.log('\x1b[1m\x1b[36m╔══════════════════════════════════════════╗\x1b[0m');
+    console.log('\x1b[1m\x1b[36m║           EDBots Pairing Code            ║\x1b[0m');
+    console.log('\x1b[1m\x1b[36m╚══════════════════════════════════════════╝\x1b[0m');
+    console.log('');
+    console.log(`\x1b[1m\x1b[32m         ${formatted}         \x1b[0m`);
+    console.log('');
+    console.log('\x1b[0mOpen WhatsApp → Linked Devices → Link with Phone Number');
+    console.log('Enter the code above when prompted.\x1b[0m');
+    console.log('');
 };
 
 /**
@@ -110,6 +131,10 @@ const connectToWhatsApp = async () => {
         }
     }
 
+    // Reset per-attempt pairing state
+    pairingRequested = false;
+    pairingFailed = false;
+
     // 6. Socket Configuration
     sock = makeWASocket({
         version,
@@ -128,27 +153,35 @@ const connectToWhatsApp = async () => {
         retryRequestDelayMs: 2000,
     });
 
-    // 7. Pairing Code Logic
-    if (usePairingCode && !sock.authState.creds.registered) {
-        try {
-            console.log(`\x1b[33m[AUTH] Requesting pairing code for ${phoneNumber}...\x1b[0m`);
-            await delay(5000); 
-            const code = await sock.requestPairingCode(phoneNumber);
-            console.log(`\n\x1b[1m\x1b[32mPAIRING CODE: ${code?.match(/.{1,4}/g)?.join('-') || code}\x1b[0m\n`);
-        } catch (err) {
-            console.error('\x1b[31m[AUTH] Failed to request pairing code:\x1b[0m', err.message);
-        }
-    }
-
-    // 8. Connection Logic
+    // 7. Connection Logic
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        if (qr && !usePairingCode) {
-            console.log('\x1b[36m[AUTH] Scan the QR Code below:\x1b[0m');
-            qrcode.generate(qr, { small: true });
+        // ── Authentication ─────────────────────────────────────
+        // The `qr` event fires only when the WebSocket is connected and
+        // ready — this is the reliable moment to request a pairing code.
+        // Requesting it earlier races against the socket handshake and
+        // fails silently, which is why the code never showed before.
+        if (qr) {
+            if (usePairingCode && !pairingRequested) {
+                pairingRequested = true;
+                try {
+                    console.log(`\x1b[33m[AUTH] Requesting pairing code for ${phoneNumber}...\x1b[0m`);
+                    const code = await sock.requestPairingCode(phoneNumber);
+                    showPairingCode(code);
+                } catch (err) {
+                    pairingFailed = true;
+                    console.error('\x1b[31m[AUTH] Failed to request pairing code:\x1b[0m', err.message);
+                    console.log('\x1b[33m[AUTH] Falling back to QR Code — scan below:\x1b[0m');
+                    qrcode.generate(qr, { small: true });
+                }
+            } else if (!usePairingCode || pairingFailed) {
+                console.log('\x1b[36m[AUTH] Scan the QR Code below (WhatsApp → Linked Devices):\x1b[0m');
+                qrcode.generate(qr, { small: true });
+            }
         }
 
+        // ── Closed / reconnect ─────────────────────────────────
         if (connection === 'close') {
             const error = lastDisconnect?.error;
             
@@ -157,28 +190,35 @@ const connectToWhatsApp = async () => {
 
             if (isCleaned) {
                 console.log('\x1b[31m[CONNECTION] Re-launching to start fresh pairing...\x1b[0m');
+                reconnectAttempts = 0;
                 // Use a short delay before restarting to ensure filesystem is free
                 setTimeout(() => connectToWhatsApp(), 2000);
             } else {
-                const retryDelay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-                console.log(`\x1b[33m[CONNECTION] Closed. Reconnecting in ${retryDelay/1000}s...\x1b[0m`);
-                await delay(retryDelay);
                 reconnectAttempts++;
+                // Give up after 10 failed attempts to avoid infinite loops
+                if (reconnectAttempts > 10) {
+                    console.error('\x1b[31m[CONNECTION] Too many reconnect attempts. Stopping.\x1b[0m');
+                    console.log('\x1b[36m[CONNECTION] Try: edbots doctor  (or check your internet)\x1b[0m');
+                    process.exit(1);
+                }
+                const retryDelay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                console.log(`\x1b[33m[CONNECTION] Closed. Reconnecting in ${retryDelay/1000}s... (attempt ${reconnectAttempts}/10)\x1b[0m`);
+                await delay(retryDelay);
                 connectToWhatsApp();
             }
         } else if (connection === 'open') {
-            console.log('\n\x1b[1m\x1b[32m[SUCCESS] EDBOT AI Connected Successfully!\x1b[0m');
+            console.log('\n\x1b[1m\x1b[32m[SUCCESS] EDBots Connected Successfully!\x1b[0m');
             console.log(`\x1b[36m[INFO] User: ${sock.user.name || 'Bot'} (${sock.user.id.split(':')[0]})\x1b[0m\n`);
             reconnectAttempts = 0;
         }
     });
 
-    // 9. Credential Saving - Patched for atomic safety
+    // 8. Credential Saving - Patched for atomic safety
     sock.ev.on('creds.update', async () => {
         await safeWriteAuth(path.join(SESSION_DIR, 'creds.json'), sock.authState.creds);
     });
 
-    // 10. Message Handling
+    // 9. Message Handling
     sock.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;

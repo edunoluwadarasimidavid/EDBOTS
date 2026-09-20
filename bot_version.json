@@ -1,99 +1,27 @@
 {
-  "version": "2.0.0",
+  "version": "2.0.2",
   "codename": "Phoenix",
-  "lastUpdated": "2025-09-20T00:00:00.000Z",
+  "lastUpdated": "2026-09-20T00:00:00.000Z",
   "changelog": [
     {
-      "type": "added",
-      "description": "Business mode system with .biz command for quick toggle"
-    },
-    {
-      "type": "added",
-      "description": "Smart auto-reply with AI learning and keyword matching"
-    },
-    {
-      "type": "added",
-      "description": "Advanced anti-ban system with human-like behavior patterns"
-    },
-    {
-      "type": "added",
-      "description": "Interactive trivia game with 50+ questions and leaderboards"
-    },
-    {
-      "type": "added",
-      "description": "Daily and weekly group challenges system"
-    },
-    {
-      "type": "added",
-      "description": "Free API integrations (news, jokes, facts, horoscope)"
-    },
-    {
-      "type": "added",
-      "description": "Business analytics dashboard"
-    },
-    {
-      "type": "added",
-      "description": "Smart notification and alert system"
-    },
-    {
-      "type": "added",
-      "description": "Version management with rollback support"
-    },
-    {
-      "type": "added",
-      "description": "Context-aware menus (.start, .menu)"
-    },
-    {
-      "type": "added",
-      "description": "Puter.js AI as primary provider with multi-provider fallback"
-    },
-    {
-      "type": "added",
-      "description": "Conversation memory with user profiles"
-    },
-    {
-      "type": "added",
-      "description": "Product catalog and invoice generation"
-    },
-    {
-      "type": "added",
-      "description": "Multi-language translation (60+ languages)"
-    },
-    {
-      "type": "added",
-      "description": "Image generation with free AI providers"
+      "type": "fixed",
+      "description": "Pairing code never displayed - was requested before socket ready (race condition)"
     },
     {
       "type": "fixed",
-      "description": "Broken imports in stickerConverter and webp2mp4"
+      "description": "Pairing failure now falls back to QR code instead of hanging"
     },
     {
       "type": "fixed",
-      "description": "Removed hardcoded admin password from security.js"
+      "description": "edbots update now works on npm installs, not just git clones"
     },
     {
       "type": "fixed",
-      "description": "Menu command now uses cached commands instead of reloading"
+      "description": "edbots update uses native fetch (no axios dependency at boot)"
     },
     {
-      "type": "fixed",
-      "description": "Broadcast command now has rate limiting"
-    },
-    {
-      "type": "fixed",
-      "description": "Cleanup system now initializes on bot startup"
-    },
-    {
-      "type": "changed",
-      "description": "Replaced src/ directory with root-level code"
-    },
-    {
-      "type": "changed",
-      "description": "Removed unnecessary files and dead code"
-    },
-    {
-      "type": "removed",
-      "description": "Sharp and node-webpmux dependencies (replaced with ffmpeg)"
+      "type": "added",
+      "description": "Connection loop limit (10 attempts) to prevent infinite reconnects"
     }
   ]
 }
