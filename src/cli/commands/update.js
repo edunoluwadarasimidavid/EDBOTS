@@ -9,7 +9,7 @@
  *
  * Works in BOTH environments:
  *   - Git clones:    git pull origin main + npm install
- *   - npm installs:  npm install -g edbots-md@latest
+ *   - npm installs:  npm install -g edbots@latest
  */
 
 'use strict';
@@ -20,7 +20,7 @@ const path = require('path');
 const logger = require('../ui/logger');
 const { askYesNo, close } = require('../ui/prompts');
 
-const PACKAGE_NAME = require('../../../package.json').name; // edbots-md
+const PACKAGE_NAME = require('../../../package.json').name; // edbots
 
 const args = process.argv.slice(3);
 const apply = args.includes('--apply');

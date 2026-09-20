@@ -27,7 +27,7 @@
 ### Install
 ```bash
 # Install globally (recommended)
-npm install -g edbots-md
+npm install -g edbots
 
 # Or from source
 git clone https://github.com/EDBOTS/EDBOTS.git
@@ -338,7 +338,7 @@ Anti-link protection? (Y/n): y
 
 ### Method 1: Global Install (Recommended)
 ```bash
-npm install -g edbots-md
+npm install -g edbots
 edbots start
 ```
 
@@ -353,7 +353,7 @@ edbots start
 
 ### Method 3: Using npx
 ```bash
-npx edbots-md start
+npx edbots start
 ```
 
 ### Requirements
