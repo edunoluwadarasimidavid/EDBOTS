@@ -1,0 +1,153 @@
+# ============================================
+# EDBots .npmignore
+# Security-first npm packaging configuration
+# ============================================
+
+# ── SECRETS & CREDENTIALS (CRITICAL) ────────
+admin.key
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+.env
+.env.*
+!.env.example
+credentials.json
+secrets.json
+tokens.json
+auth.json
+
+# ── SESSION & AUTHENTICATION DATA ───────────
+session/
+session_*/
+session_backup_*/
+auth/
+auth_*/
+
+# ── DATABASE & RUNTIME DATA ─────────────────
+database/
+*.db
+*.sqlite
+*.sqlite3
+
+# ── DATA FILES (runtime-generated) ──────────
+data/analytics.json
+data/autoReplies.json
+data/bizConfig.json
+data/botModes.json
+data/challengeData.json
+data/commandFile.json
+data/commandHelp.json
+data/notifications.json
+data/ownerMenu.json
+data/smartAutoReply.json
+data/triviaData.json
+data/config.json
+data/*.json
+
+# ── TEMP & LOGS ────────────────────────────
+temp/
+tmp/
+*.log
+logs/
+.npm-debug.log*
+
+# ── DEVELOPMENT FILES ──────────────────────
+.github/
+.git/
+.gitignore
+.hashes.json
+.vly-run/
+.vscode/
+.vscode-test/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── DEVELOPMENT DOCUMENTATION ──────────────
+GEMINI.md
+README_NEW.md
+CONTRIBUTING.md
+CHANGELOG.md
+LICENSE.md
+TODO.md
+NOTES.md
+
+# ── DEPLOYMENT FILES ──────────────────────
+Procfile
+app.json
+docker-compose.yml
+docker-compose.yaml
+Dockerfile
+Dockerfile.*
+.dockerignore
+vercel.json
+netlify.json
+render.yaml
+fly.toml
+
+# ── PREMIUM SERVER (separate project) ─────
+edbot-premium-server/
+
+# ── BACKUP FILES ──────────────────────────
+*.backup
+*.bak
+*.backup.*
+*_backup_*/
+
+# ── LARGE MEDIA FILES ─────────────────────
+utils/bot_image.jpg
+utils/bmc_qr.png
+*.mp4
+*.mp3
+*.wav
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+
+# ── CI/CD FILES ───────────────────────────
+.travis.yml
+.circleci/
+.github/
+appveyor.yml
+codecov.yml
+coveralls.yml
+
+# ── TEST FILES ────────────────────────────
+test/
+tests/
+__tests__/
+*.test.js
+*.spec.js
+coverage/
+.nyc_output/
+
+# ── BUILD ARTIFACTS ───────────────────────
+dist/
+build/
+out/
+.cache/
+
+# ── NODE MODULES (npm installs these) ─────
+node_modules/
+
+# ── PACKAGE LOCK FILES ────────────────────
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+shrinkwrap.json
+
+# ── OTHER ─────────────────────────────────
+*.tgz
+*.tar.gz
+*.zip
+*.rar
+*.7z
