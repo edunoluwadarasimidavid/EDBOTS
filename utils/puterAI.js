@@ -2,7 +2,14 @@
  * Puter AI Utility with Cloudflare Tunnel Support
  * Optimized for restricted container environments (Pterodactyl, Docker, etc.)
  */
-const { init } = require("@heyputer/puter.js/src/init.cjs");
+// Optional dependency: puter.js may not be installed. The bot must still
+// boot without it — AI simply falls back to other providers.
+let init = null;
+try {
+    ({ init } = require("@heyputer/puter.js/src/init.cjs"));
+} catch (e) {
+    // Not installed — init stays null and generateReply returns NOT_CONNECTED
+}
 const fs = require('fs');
 const path = require('path');
 const http = require('http');

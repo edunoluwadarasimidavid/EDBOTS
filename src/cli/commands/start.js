@@ -13,6 +13,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const readline = require('readline');
 const logger = require('../ui/logger');
 const { spinner } = require('../ui/spinner');
 
@@ -70,8 +71,6 @@ async function start() {
  * Handle first-time authentication with interactive selection
  */
 async function handleFirstTimeAuth() {
-    const { ask, askChoice, close } = require('../ui/prompts');
-
     console.log('\x1b[1m\x1b[33m╔══════════════════════════════════════════╗\x1b[0m');
     console.log('\x1b[1m\x1b[33m║           EDBots Pairing                 ║\x1b[0m');
     console.log('\x1b[1m\x1b[33m╚══════════════════════════════════════════╝\x1b[0m');
@@ -97,75 +96,75 @@ async function handleFirstTimeAuth() {
     }
 
     // Interactive selection with 10-second timeout
+    // Uses readline (not raw stdin) so it works over SSH, Termux, Docker
+    // and any TTY. QR is the default fallback for headless environments.
     let selected = false;
-    let mode = 'qr'; // default fallback
 
-    // Set up 10-second timeout
-    const timeout = setTimeout(() => {
-        if (!selected) {
-            console.log('\n');
-            logger.warn('No option selected (10s timeout)');
-            logger.info('Switching to QR Code mode...\n');
-            selected = true;
-            close();
+    const selectRl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: process.stdin.isTTY === true,
+    });
+
+    const promptText = 'Select an option (1-2): ';
+
+    const finish = (mode) => {
+        if (selected) return;
+        selected = true;
+        clearTimeout(timeoutId);
+        clearInterval(countdownInterval);
+        try { selectRl.close(); } catch (e) {}
+        try { selectRl.removeAllListeners(); } catch (e) {}
+
+        if (mode === 'pair') {
+            startWithPairingCode();
+        } else if (mode === 'invalid') {
+            logger.warn('Invalid option. Defaulting to QR Code...\n');
+            startWithQR();
+        } else {
             startWithQR();
         }
+    };
+
+    // 10-second fallback timer -> QR (headless-safe default)
+    let remaining = 10;
+    const timeoutId = setTimeout(() => {
+        if (selected) return;
+        process.stdout.write('\n');
+        logger.warn('No option selected (10s timeout)');
+        logger.info('Switching to QR Code mode...\n');
+        finish('qr');
     }, 10000);
 
-    // Show countdown
     const countdownInterval = setInterval(() => {
-        if (selected) {
-            clearInterval(countdownInterval);
-            return;
-        }
-        const elapsed = Math.floor((Date.now() % 10000) / 1000);
-        const remaining = 10 - elapsed;
+        if (selected) { clearInterval(countdownInterval); return; }
+        remaining -= 1;
         if (remaining > 0) {
-            process.stdout.write(`\rSelect an option (1-2): _ (${remaining}s)   `);
+            process.stdout.write(`\r${promptText}_ (${remaining}s)   `);
         }
     }, 1000);
 
-    try {
-        process.stdout.write('Select an option (1-2): _ ');
-        
-        // Read a single character
-        process.stdin.setRawMode(true);
-        process.stdin.resume();
-        
-        const char = await new Promise((resolve) => {
-            process.stdin.once('data', (data) => {
-                resolve(data.toString().trim());
-            });
-        });
+    process.stdout.write(promptText);
 
-        process.stdin.setRawMode(false);
-        clearTimeout(timeout);
-        clearInterval(countdownInterval);
-        
-        if (selected) return; // Already handled by timeout
-        
-        selected = true;
-        close();
+    selectRl.on('line', (line) => {
+        const answer = String(line).trim();
+        if (answer === '1') finish('pair');
+        else if (answer === '2') finish('qr');
+        else finish('invalid');
+    });
 
-        if (char === '1') {
-            await startWithPairingCode();
-        } else if (char === '2') {
-            await startWithQR();
-        } else {
-            logger.warn('Invalid option. Defaulting to QR Code...\n');
-            await startWithQR();
-        }
-    } catch (err) {
-        process.stdin.setRawMode(false);
-        clearTimeout(timeout);
-        clearInterval(countdownInterval);
+    selectRl.on('close', () => {
+        // stdin ended (piped/closed input, e.g. `edbots start < /dev/null`)
         if (!selected) {
-            selected = true;
-            close();
-            logger.warn('Input error. Defaulting to QR Code...\n');
-            await startWithQR();
+            process.stdout.write('\n');
+            logger.warn('Input closed. Switching to QR Code mode...\n');
+            finish('qr');
         }
-    }
+    });
+
+    selectRl.on('error', () => {
+        if (!selected) finish('qr');
+    });
 }
 
 /**

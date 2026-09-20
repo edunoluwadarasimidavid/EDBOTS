@@ -69,10 +69,27 @@ const connectToWhatsApp = async () => {
     }
 
     // 5. Auth Preference (Pairing vs QR)
+    // The CLI (edbots start / edbots pair) sets EDBOTS_AUTH_MODE and skips
+    // its own interactive prompt to avoid asking the user twice.
+    // If the env var is not set (legacy `node index.js` run), fall back to the
+    // interactive prompt on TTY, or QR mode on headless systems.
     let usePairingCode = false;
     let phoneNumber = "";
 
-    if (!state.creds.me && !state.creds.registered) {
+    const cliAuthMode = process.env.EDBOTS_AUTH_MODE || '';
+    const cliAuthHandled = cliAuthMode === 'qr' || cliAuthMode === 'pair';
+
+    if (cliAuthHandled) {
+        // CLI already handled the selection — honor it silently
+        if (cliAuthMode === 'pair') {
+            usePairingCode = true;
+            phoneNumber = (process.env.EDBOTS_PHONE_NUMBER || '').replace(/[^0-9]/g, '');
+            if (!phoneNumber) {
+                console.log('\x1b[31m[AUTH] CLI requested pairing mode but no phone number was set. Defaulting to QR Code.\x1b[0m');
+                usePairingCode = false;
+            }
+        }
+    } else if (!state.creds.me && !state.creds.registered) {
         if (process.stdin.isTTY) {
             console.log('\n\x1b[1m\x1b[33mSelect Authentication Method:\x1b[0m');
             console.log('1. QR Code (Default)');

@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { askAI } = require('../aiEngine');
+const { askAI } = require('./aiEngine');
 
 const AUTOREPLY_DATA_FILE = path.join(__dirname, '../data/smartAutoReply.json');
 
