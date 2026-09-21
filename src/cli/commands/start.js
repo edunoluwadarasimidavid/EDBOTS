@@ -5,7 +5,7 @@
  * Performs:
  * 1. Load configuration
  * 2. Check authentication
- * 3. If no auth: interactive selection (QR/pairing) with 10s fallback
+ * 3. If no auth: interactive selection (QR/pairing) with 20s fallback
  * 4. Start the bot
  */
 
@@ -13,7 +13,6 @@
 
 const path = require('path');
 const fs = require('fs');
-const readline = require('readline');
 const logger = require('../ui/logger');
 const { spinner } = require('../ui/spinner');
 
@@ -95,75 +94,106 @@ async function handleFirstTimeAuth() {
         return;
     }
 
-    // Interactive selection with 10-second timeout
-    // Uses readline (not raw stdin) so it works over SSH, Termux, Docker
-    // and any TTY. QR is the default fallback for headless environments.
-    let selected = false;
+    // Interactive selection: single-line countdown, instant keypress,
+    // 20s timeout with QR fallback (headless-safe default).
+    const mode = await selectAuthMethod();
+    if (mode === 'pair') {
+        await startWithPairingCode();
+    } else {
+        await startWithQR();
+    }
+}
 
-    const selectRl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-        terminal: process.stdin.isTTY === true,
-    });
+/**
+ * Interactive auth-method selection.
+ *
+ * UX requirements:
+ * - The countdown stays on ONE line (in-place rewrite, never wraps or jumps).
+ * - Pressing 1 or 2 is acknowledged IMMEDIATELY (no Enter needed).
+ * - Any other key is ignored; the countdown keeps running.
+ * - 20-second timeout falls back to QR Code (headless-safe default).
+ * - Ctrl+C still exits cleanly (raw mode swallows SIGINT).
+ * - Piped/closed stdin (no TTY) goes straight to QR instead of hanging.
+ */
+function selectAuthMethod() {
+    const TIMEOUT_SECONDS = Number(process.env.EDBOTS_SELECT_TIMEOUT) || 20;
 
-    const promptText = 'Select an option (1-2): ';
+    // Headless / piped stdin (no TTY): keypresses are impossible -> QR directly.
+    const canUseRaw =
+        process.stdin.isTTY === true &&
+        typeof process.stdin.setRawMode === 'function';
 
-    const finish = (mode) => {
-        if (selected) return;
-        selected = true;
-        clearTimeout(timeoutId);
-        clearInterval(countdownInterval);
-        try { selectRl.close(); } catch (e) {}
-        try { selectRl.removeAllListeners(); } catch (e) {}
+    if (!canUseRaw) {
+        logger.info('No interactive terminal detected. Switching to QR Code mode...\n');
+        return Promise.resolve('qr');
+    }
 
-        if (mode === 'pair') {
-            startWithPairingCode();
-        } else if (mode === 'invalid') {
-            logger.warn('Invalid option. Defaulting to QR Code...\n');
-            startWithQR();
-        } else {
-            startWithQR();
-        }
-    };
+    return new Promise((resolve) => {
+        let settled = false;
+        let remaining = TIMEOUT_SECONDS;
 
-    // 10-second fallback timer -> QR (headless-safe default)
-    let remaining = 10;
-    const timeoutId = setTimeout(() => {
-        if (selected) return;
-        process.stdout.write('\n');
-        logger.warn('No option selected (10s timeout)');
-        logger.info('Switching to QR Code mode...\n');
-        finish('qr');
-    }, 10000);
+        // Deliberately short prompt so it never wraps, even on narrow
+        // Termux screens (the menu options are printed above).
+        const PROMPT = 'Your choice (auto-QR in ';
+        const PAD = '    ';
 
-    const countdownInterval = setInterval(() => {
-        if (selected) { clearInterval(countdownInterval); return; }
-        remaining -= 1;
-        if (remaining > 0) {
-            process.stdout.write(`\r${promptText}_ (${remaining}s)   `);
-        }
-    }, 1000);
+        const clearLine = () => {
+            process.stdout.write('\r' + ' '.repeat(PROMPT.length + PAD.length + 6) + '\r');
+        };
 
-    process.stdout.write(promptText);
+        const render = () => {
+            // \r rewrite on the SAME line — never emits a newline.
+            process.stdout.write(`\r${PROMPT}${remaining}s): ${PAD}`);
+        };
 
-    selectRl.on('line', (line) => {
-        const answer = String(line).trim();
-        if (answer === '1') finish('pair');
-        else if (answer === '2') finish('qr');
-        else finish('invalid');
-    });
+        const cleanup = () => {
+            clearInterval(tickInterval);
+            clearTimeout(timeoutId);
+            process.stdin.removeListener('data', onData);
+            try { process.stdin.setRawMode(false); } catch (e) { /* already off */ }
+        };
 
-    selectRl.on('close', () => {
-        // stdin ended (piped/closed input, e.g. `edbots start < /dev/null`)
-        if (!selected) {
-            process.stdout.write('\n');
-            logger.warn('Input closed. Switching to QR Code mode...\n');
-            finish('qr');
-        }
-    });
+        const finish = (mode, label) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            clearLine();
+            logger.success(`${label} selected`);
+            resolve(mode);
+        };
 
-    selectRl.on('error', () => {
-        if (!selected) finish('qr');
+        const onData = (buf) => {
+            const key = buf.toString('utf8');
+            if (key.includes('\u0003')) { // Ctrl+C (raw mode swallows SIGINT)
+                process.stdout.write('\n');
+                process.exit(0);
+            }
+            const ch = key.charAt(0);
+            if (ch === '1') finish('pair', 'Pairing Code');
+            else if (ch === '2') finish('qr', 'QR Code');
+            // Any other key: ignored, countdown continues.
+        };
+
+        const tickInterval = setInterval(() => {
+            if (settled) return;
+            remaining -= 1;
+            if (remaining > 0) render();
+        }, 1000);
+
+        const timeoutId = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            clearLine();
+            logger.warn(`No option selected (${TIMEOUT_SECONDS}s timeout)`);
+            logger.info('Switching to QR Code mode...\n');
+            resolve('qr');
+        }, TIMEOUT_SECONDS * 1000);
+
+        process.stdin.resume();
+        process.stdin.setRawMode(true);
+        process.stdin.on('data', onData);
+        render();
     });
 }
 

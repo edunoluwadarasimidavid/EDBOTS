@@ -8,14 +8,14 @@ module.exports = {
     ownerName: ['EDBOTS', 'Edun Oluwadarasimi David'],
     
     // Bot Configuration
-    botName: 'EDBOTS',
+    botName: 'EDBots',
     prefix: '.',
     sessionName: 'session', // Folder name for session data
     newsletterJid: '120363407258579577@newsletter',
     updateZipUrl: 'https://github.com/edunoluwadarasimidavid/EDBOTS/archive/refs/heads/main.zip',
     
     // Sticker Configuration
-    packname: 'EDBOTS',
+    packname: 'EDBots',
     
     // Bot Behavior
     selfMode: false,
