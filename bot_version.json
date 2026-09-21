@@ -1,27 +1,67 @@
 {
-  "version": "2.0.2",
+  "version": "2.0.3",
   "codename": "Phoenix",
-  "lastUpdated": "2026-09-20T00:00:00.000Z",
+  "lastUpdated": "2026-09-21T00:00:00.000Z",
   "changelog": [
     {
-      "type": "fixed",
-      "description": "Pairing code never displayed - was requested before socket ready (race condition)"
-    },
-    {
-      "type": "fixed",
-      "description": "Pairing failure now falls back to QR code instead of hanging"
-    },
-    {
-      "type": "fixed",
-      "description": "edbots update now works on npm installs, not just git clones"
-    },
-    {
-      "type": "fixed",
-      "description": "edbots update uses native fetch (no axios dependency at boot)"
+      "type": "added",
+      "description": "Themed menu UI with 3 visual styles and two-column command grid"
     },
     {
       "type": "added",
-      "description": "Connection loop limit (10 attempts) to prevent infinite reconnects"
+      "description": "Git repository card shown in .menu and .start"
+    },
+    {
+      "type": "added",
+      "description": "Puter.js account linking (.puter link) with popup URL and auto-confirm"
+    },
+    {
+      "type": "added",
+      "description": "Auto-reply enablement now runs Puter linking automatically"
+    },
+    {
+      "type": "added",
+      "description": "Interactive group quiz with leaderboard (.quiz)"
+    },
+    {
+      "type": "added",
+      "description": "Pokemon lookup with stats and sprite (.poke)"
+    },
+    {
+      "type": "added",
+      "description": "Cat photos and cats-with-text memes (.cat)"
+    },
+    {
+      "type": "added",
+      "description": "Dog photos by breed (.dog)"
+    },
+    {
+      "type": "added",
+      "description": "Name predictions: age, gender, nationality (.namegame)"
+    },
+    {
+      "type": "added",
+      "description": "Chuck Norris jokes (.chuck)"
+    },
+    {
+      "type": "added",
+      "description": "Currency converter with live rates (.cx)"
+    },
+    {
+      "type": "added",
+      "description": "Customer feedback collection system (.feedback)"
+    },
+    {
+      "type": "added",
+      "description": "Appointment booking system with confirm/reject (.book)"
+    },
+    {
+      "type": "changed",
+      "description": "Joke command upgraded: safe-mode JokeAPI with categories"
+    },
+    {
+      "type": "fixed",
+      "description": "Puter tunnel flow: token capture bug, fallback tunnels, session tracking"
     }
   ]
 }

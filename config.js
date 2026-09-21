@@ -77,7 +77,7 @@ module.exports = {
     maxWarnings: 3,
     
     social: {
-      github: 'https://github.com/EDBOTS',
+      github: 'https://github.com/edunoluwadarasimidavid/EDBOTS',
       instagram: 'https://instagram.com/edunoluwadarasimidavid',
       youtube: 'https://youtube.com/@edunoluwadarasimidavid?si=ZksmemM8EWFQsBbl'
     }

@@ -1,9 +1,10 @@
 /**
- * Start Command - Public entry point showing available commands
+ * Start Command - Public entry point with themed UI
  * Context-aware: shows different commands based on chat type and user role
  */
 
 const { getFormattedUptime } = require('../../utils/uptime');
+const { buildMenu, linkPreview } = require('../../utils/menuRenderer');
 const config = require('../../config');
 
 module.exports = {
@@ -12,7 +13,7 @@ module.exports = {
     category: 'general',
     description: 'Show available commands based on your context',
     usage: '.start',
-    visibility: 'public', // Always visible to everyone
+    visibility: 'public',
 
     async execute(sock, msg, args, extra) {
         try {
@@ -20,145 +21,60 @@ module.exports = {
             const pushName = msg.pushName || "User";
             const runtime = getFormattedUptime() || "0h 0m";
 
-            // Get all unique commands
             const uniqueCommands = commands instanceof Map ? new Set(commands.values()) : new Set();
 
-            // Filter commands based on context
-            const publicCmds = [];
-            const groupCmds = [];
-            const adminCmds = [];
-            const aiCmds = [];
-            const funCmds = [];
-            const mediaCmds = [];
-            const utilityCmds = [];
-            const businessCmds = [];
-
-            uniqueCommands.forEach(cmd => {
-                const cat = (cmd.category || '').toLowerCase();
+            // Filter by context
+            const visible = Array.from(uniqueCommands).filter(cmd => {
                 const vis = cmd.visibility || 'public';
-
-                // Skip hidden and owner-only from start
-                if (vis === 'hidden' || cmd.ownerOnly) return;
-
-                // Skip group-only commands in private chat
-                if (cmd.groupOnly && !isGroup) return;
-
-                // Skip admin commands if not admin
-                if (cmd.adminOnly && !isAdmin && !isOwner) return;
-
-                // Categorize
-                if (cat === 'ai') aiCmds.push(cmd.name);
-                else if (cat === 'fun') funCmds.push(cmd.name);
-                else if (cat === 'media') mediaCmds.push(cmd.name);
-                else if (cat === 'utility' || cat === 'general') utilityCmds.push(cmd.name);
-                else if (cat === 'business') businessCmds.push(cmd.name);
-                else if (cat === 'group' && isGroup) groupCmds.push(cmd.name);
-                else if (cat === 'admin' && (isAdmin || isOwner)) adminCmds.push(cmd.name);
-                else if (vis === 'public') publicCmds.push(cmd.name);
+                if (vis === 'hidden') return false;
+                if (cmd.ownerOnly && !isOwner) return false;
+                if (cmd.groupOnly && !isGroup) return false;
+                if (cmd.adminOnly && !isAdmin && !isOwner) return false;
+                if (!isGroup) {
+                    const cat = (cmd.category || '').toLowerCase();
+                    if (['admin', 'group', 'moderation'].includes(cat)) return false;
+                }
+                return true;
             });
 
-            // Build greeting
-            const greetings = [
-                `Hey ${pushName}! 👋`,
-                `Hello ${pushName}! 🌟`,
-                `Welcome ${pushName}! ✨`,
-                `Hi there ${pushName}! 🎉`
-            ];
-            const greeting = greetings[Math.floor(Math.random() * greetings.length)];
+            // Group by category
+            const grouped = {};
+            visible.forEach(cmd => {
+                const cat = (cmd.category || 'general').toLowerCase().trim();
+                if (!grouped[cat]) grouped[cat] = [];
+                if (!grouped[cat].includes(cmd.name)) grouped[cat].push(cmd.name);
+            });
 
-            // Build menu
-            let text = `╭━━━〔 🤖 *EDBOTS AI* 〕━━━╮\n`;
-            text += `┃ ${greeting}\n`;
-            text += `┃ 🏁 Prefix: ${prefix}\n`;
-            text += `┃ ⏱️ Uptime: ${runtime}\n`;
-            text += `┃ 📍 ${isGroup ? 'Group Chat' : 'Private Chat'}\n`;
-            if (isGroup && (isAdmin || isOwner)) {
-                text += `┃ 🛡️ Role: ${isOwner ? 'Owner' : 'Admin'}\n`;
-            }
-            text += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
+            const ORDER = ['general', 'ai', 'fun', 'media', 'utility', 'business', 'group', 'admin', 'system', 'menu'];
+            const ordered = ORDER.filter(c => grouped[c]).map(c => ({ name: c, commands: grouped[c] }));
+            const rest = Object.keys(grouped)
+                .filter(c => !ORDER.includes(c))
+                .sort()
+                .map(c => ({ name: c, commands: grouped[c] }));
 
-            // AI Commands
-            if (aiCmds.length > 0) {
-                text += `╭━━━〔 🧠 *AI & CHAT* 〕━━━╮\n`;
-                aiCmds.sort().forEach(cmd => {
-                    text += `┃ • ${prefix}${cmd}\n`;
-                });
-                text += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-            }
+            const categories = [...ordered, ...rest];
 
-            // Fun Commands
-            if (funCmds.length > 0) {
-                text += `╭━━━〔 🎮 *FUN* 〕━━━╮\n`;
-                funCmds.sort().forEach(cmd => {
-                    text += `┃ • ${prefix}${cmd}\n`;
-                });
-                text += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-            }
+            const title = isGroup ? '👥 GROUP START' : '✨ EDBOTS';
+            const subtitle = isGroup
+                ? `Role: ${isOwner ? 'Owner' : isAdmin ? 'Admin' : 'Member'}`
+                : `Hey ${pushName}! 👋`;
 
-            // Media Commands
-            if (mediaCmds.length > 0) {
-                text += `╭━━━〔 📥 *MEDIA* 〕━━━╮\n`;
-                mediaCmds.sort().forEach(cmd => {
-                    text += `┃ • ${prefix}${cmd}\n`;
-                });
-                text += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-            }
-
-            // Utility Commands
-            if (utilityCmds.length > 0) {
-                text += `╭━━━〔 🔧 *UTILITY* 〕━━━╮\n`;
-                utilityCmds.sort().forEach(cmd => {
-                    text += `┃ • ${prefix}${cmd}\n`;
-                });
-                text += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-            }
-
-            // Business Commands
-            if (businessCmds.length > 0) {
-                text += `╭━━━〔 💼 *BUSINESS* 〕━━━╮\n`;
-                businessCmds.sort().forEach(cmd => {
-                    text += `┃ • ${prefix}${cmd}\n`;
-                });
-                text += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-            }
-
-            // Group Commands (only in groups)
-            if (isGroup && groupCmds.length > 0) {
-                text += `╭━━━〔 👥 *GROUP* 〕━━━╮\n`;
-                groupCmds.sort().forEach(cmd => {
-                    text += `┃ • ${prefix}${cmd}\n`;
-                });
-                text += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-            }
-
-            // Admin Commands (only for admins)
-            if ((isAdmin || isOwner) && adminCmds.length > 0) {
-                text += `╭━━━〔 🛡️ *ADMIN* 〕━━━╮\n`;
-                adminCmds.sort().forEach(cmd => {
-                    text += `┃ • ${prefix}${cmd}\n`;
-                });
-                text += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-            }
-
-            // Footer
-            text += `💡 *Quick Start:*\n`;
-            text += `• ${prefix}ai <question> - Ask AI anything\n`;
-            text += `• ${prefix}menu - Full command list\n`;
-            text += `• ${prefix}help - Get help\n\n`;
-            text += `> _Type ${prefix}command for more info_`;
+            const { text } = buildMenu({
+                title,
+                subtitle,
+                userName: pushName,
+                botNumber: '',
+                ownerName: '',
+                prefix,
+                uptime: runtime,
+                mode: '',
+                categories,
+                isStart: true
+            });
 
             await sock.sendMessage(extra.from, {
                 text: text.trim(),
-                contextInfo: {
-                    externalAdReply: {
-                        title: `EDBOTS AI SYSTEM`,
-                        body: `Your Intelligent Assistant`,
-                        thumbnailUrl: "https://github.com/edunoluwadarasimidavid.png",
-                        sourceUrl: config.social?.github || "https://github.com/EDBOTS",
-                        mediaType: 1,
-                        renderLargerThumbnail: true
-                    }
-                }
+                contextInfo: { externalAdReply: linkPreview() }
             }, { quoted: msg });
 
         } catch (error) {
