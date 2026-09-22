@@ -289,28 +289,45 @@ async function rollbackToVersion(version) {
 }
 
 /**
- * Update to latest version from GitHub
+ * Update to latest version from GitHub (NON-DESTRUCTIVE).
+ *
+ * - Backs up first
+ * - Stashes local changes and restores them after the pull
+ * - Uses `git pull --ff-only` (NEVER reset --hard)
+ * - Reinstalls dependencies
  */
 async function updateToLatest() {
     try {
         console.log('[VersionManager] Updating to latest version...');
-        
+
         // Create backup first
         await createBackup();
-        
-        // Fetch latest
-        await runGit('git fetch --all');
-        
-        // Reset to latest main
-        const result = await runGit('git reset --hard origin/main 2>&1');
-        
-        if (result.error) {
-            return { success: false, error: result.stderr || 'Failed to update' };
+
+        // Stash local changes so nothing is destroyed
+        const status = await runGit('git status --porcelain');
+        const hasLocalChanges = status.stdout && status.stdout.trim().length > 0;
+        let stashed = false;
+        if (hasLocalChanges) {
+            const stashRes = await runGit('git stash push --include-untracked -m "EDBots auto-stash before update"');
+            stashed = !stashRes.error && /stash/i.test(stashRes.stdout + stashRes.stderr);
         }
-        
+
+        // Pull latest (fast-forward only — never rewrites local history)
+        const result = await runGit('git pull --ff-only 2>&1');
+
+        if (result.error) {
+            if (stashed) await runGit('git stash pop 2>&1');
+            return { success: false, error: result.stderr || 'git pull failed' };
+        }
+
         // Install dependencies if package.json changed
-        await runGit('npm install --production 2>&1 || true');
-        
+        await runGit('npm install --legacy-peer-deps 2>&1 || true');
+
+        // Restore local changes
+        if (stashed) {
+            await runGit('git stash pop 2>&1');
+        }
+
         console.log('[VersionManager] Update to latest successful');
         return { success: true };
     } catch (error) {
@@ -335,25 +352,99 @@ function formatChangelog(changelog) {
 }
 
 /**
+ * Count how many commits the local copy is behind the remote main branch.
+ *
+ * Detection strategy (most reliable first):
+ *   1. git fetch + rev-list        (git clones — exact commit count)
+ *   2. GitHub compare API          (needs local HEAD sha)
+ *   3. raw package.json version    (zip installs without .git)
+ *
+ * Returns { behind, source, remoteVersion?, localVersion? }.
+ */
+async function getCommitBehindCount() {
+    // 1. Git-based check (git clones)
+    const fetchRes = await runGit('git fetch origin main 2>&1');
+    if (!fetchRes.error) {
+        const countRes = await runGit('git rev-list --count HEAD..origin/main');
+        if (!countRes.error && countRes.stdout !== '') {
+            return { behind: parseInt(countRes.stdout, 10) || 0, source: 'git' };
+        }
+    }
+
+    // 2. GitHub compare API (uses local HEAD sha)
+    // Semantics for `HEAD...main`: ahead_by = commits main has that local
+    // lacks (i.e. how far behind we are); behind_by = local-only commits.
+    const commitRes = await runGit('git rev-parse HEAD');
+    if (!commitRes.error && commitRes.stdout) {
+        try {
+            const res = await axios.get(
+                `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/compare/${commitRes.stdout}...main`,
+                { timeout: 15000, headers: { 'User-Agent': 'EDBots-VersionManager' } }
+            );
+            if (res.data && typeof res.data.ahead_by === 'number') {
+                return { behind: res.data.ahead_by, source: 'github' };
+            }
+        } catch (e) { /* fall through */ }
+    }
+
+    // 3. Raw package.json version comparison (zip installs, no .git)
+    try {
+        const res = await axios.get(
+            `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/package.json`,
+            { timeout: 15000 }
+        );
+        const remoteVersion = res.data && res.data.version;
+        let localVersion = null;
+        try {
+            localVersion = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8')).version;
+        } catch (e) { /* ignore */ }
+        if (remoteVersion && localVersion) {
+            return {
+                behind: compareVersions(remoteVersion, localVersion) > 0 ? 1 : 0,
+                source: 'registry',
+                remoteVersion,
+                localVersion
+            };
+        }
+    } catch (e) { /* offline or no network */ }
+
+    return { behind: 0, source: 'none' };
+}
+
+/**
  * Get formatted version info for display
+ *
+ * NOTE: This repo does not use GitHub Releases, so update detection is
+ * primarily commit-based (getCommitBehindCount). Releases are used when
+ * they exist.
  */
 async function getVersionInfo() {
     const current = getCurrentVersion();
     const gitInfo = await getCurrentGitInfo();
     const latestRelease = await getLatestRelease();
+    const commitInfo = await getCommitBehindCount();
     const tags = await getAvailableTags();
-    
-    const isUpToDate = latestRelease 
-        ? compareVersions(current.version, latestRelease.version.replace(/^v/, '')) >= 0
-        : true;
-    
+
+    let updateAvailable = false;
+
+    if (latestRelease) {
+        updateAvailable = compareVersions(
+            current.version,
+            latestRelease.version.replace(/^v/, '')
+        ) < 0;
+    }
+    if (!updateAvailable && commitInfo.behind > 0) {
+        updateAvailable = true;
+    }
+
     return {
         current,
         gitInfo,
         latestRelease,
+        commitInfo,
         tags: tags.slice(0, 10), // Latest 10 tags
-        isUpToDate,
-        updateAvailable: !isUpToDate && latestRelease
+        isUpToDate: !updateAvailable,
+        updateAvailable
     };
 }
 
@@ -366,6 +457,7 @@ module.exports = {
     getAvailableTags,
     getLatestTag,
     getCurrentGitInfo,
+    getCommitBehindCount,
     createBackup,
     downloadRelease,
     rollbackToVersion,

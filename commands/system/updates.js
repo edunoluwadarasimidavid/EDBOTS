@@ -38,30 +38,37 @@ module.exports = {
                 case 'check': {
                     await extra.reply('🔍 Checking for updates...');
                     const info = await getVersionInfo();
-                    
-                    if (info.updateAvailable) {
-                        const latest = info.latestRelease;
-                        const currentVer = current.version;
-                        const latestVer = latest.version.replace(/^v/, '');
-                        
+
+                    // Primary signal: commits behind on origin/main
+                    const behind = info.commitInfo?.behind || 0;
+
+                    if (info.updateAvailable || behind > 0) {
                         let text = `🔄 *Update Available!*\n\n`;
-                        text += `*Current Version:* ${currentVer}\n`;
-                        text += `*Latest Version:* ${latestVer}\n`;
-                        text += `*Published:* ${new Date(latest.publishedAt).toLocaleDateString()}\n\n`;
-                        
-                        if (latest.body) {
-                            text += `*What's New:*\n`;
-                            text += latest.body.substring(0, 500);
-                            if (latest.body.length > 500) text += '...';
+                        text += `*Current Version:* ${current.version}\n`;
+
+                        if (behind > 0) {
+                            text += `*Commits Behind:* ${behind} (origin/main)\n`;
+                            text += `*Detected via:* ${info.commitInfo?.source || 'git'}\n`;
                         }
-                        
+
+                        if (info.latestRelease) {
+                            const latest = info.latestRelease;
+                            text += `*Latest Release:* ${latest.version.replace(/^v/, '')}\n`;
+                            text += `*Published:* ${new Date(latest.publishedAt).toLocaleDateString()}\n\n`;
+                            if (latest.body) {
+                                text += `*What's New:*\n`;
+                                text += latest.body.substring(0, 500);
+                                if (latest.body.length > 500) text += '...';
+                            }
+                        }
+
                         text += `\n\n> _Type \`.update\` to install the latest version_`;
                         return extra.reply(text);
                     } else {
                         return extra.reply(
                             `✅ *You're up to date!*\n\n` +
                             `*Version:* ${current.version}\n` +
-                            `*Status:* Latest release\n` +
+                            `*Status:* Latest code on origin/main\n` +
                             (current.codename ? `*Codename:* ${current.codename}\n` : '')
                         );
                     }
@@ -150,8 +157,12 @@ module.exports = {
                     
                     text += `┃\n`;
                     
-                    // Update status
-                    if (info.updateAvailable) {
+                    // Update status (commit-based first — repo uses no GitHub Releases)
+                    const behind = info.commitInfo?.behind || 0;
+                    if (behind > 0) {
+                        text += `┃ 🔄 *Update Available:* ${behind} commit(s) behind\n`;
+                        text += `┃    Type \`.updates check\` for details\n`;
+                    } else if (info.updateAvailable && info.latestRelease) {
                         text += `┃ 🔄 *Update Available:* ${info.latestRelease.version}\n`;
                         text += `┃    Type \`.updates check\` for details\n`;
                     } else {
