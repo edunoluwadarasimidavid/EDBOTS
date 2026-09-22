@@ -1,9 +1,9 @@
 /**
  * @file pair.js
  * @description EDBots pair command — authenticate with WhatsApp.
- * 
+ *
  * Usage:
- *   edbots pair          Interactive selection
+ *   edbots pair          Interactive selection (1 = QR, 2 = Pairing)
  *   edbots pair --qr     QR code mode
  *   edbots pair --code   Pairing code mode
  */
@@ -11,7 +11,6 @@
 'use strict';
 
 const logger = require('../ui/logger');
-const { ask, close } = require('../ui/prompts');
 const configManager = require('../../config/manager');
 
 const args = process.argv.slice(3);
@@ -29,52 +28,27 @@ async function pair() {
     const fs = require('fs');
     const path = require('path');
     const sessionDir = path.join(process.cwd(), configManager.get('bot.sessionName') || 'session');
-    
+
     if (fs.existsSync(path.join(sessionDir, 'creds.json'))) {
         logger.warn('Already authenticated!');
         logger.info('Run "edbots start" to use the bot.');
-        logger.info('Or delete the session directory to re-pair.');
+        logger.info('Or run "edbots logout" to disconnect and re-pair.');
         return;
     }
 
+    const { selectAuth, selectAuthMethod, promptForPhoneNumber, applyAuthEnv } = require('./authSelect');
+
     if (forceQR) {
         logger.info('Starting QR authentication...');
-        process.env.EDBOTS_AUTH_MODE = 'qr';
+        applyAuthEnv({ mode: 'qr' });
     } else if (forceCode) {
-        const phoneNumber = await ask('Enter your WhatsApp phone number (e.g., 2348012345678): ');
-        const cleaned = phoneNumber.replace(/[^0-9]/g, '');
-        
-        if (!cleaned || cleaned.length < 8) {
-            logger.error('Invalid phone number');
-            process.exit(1);
-        }
-        
-        logger.info(`Starting pairing code authentication for ${cleaned}...`);
-        process.env.EDBOTS_AUTH_MODE = 'pair';
-        process.env.EDBOTS_PHONE_NUMBER = cleaned;
+        const phoneNumber = await promptForPhoneNumber();
+        logger.info(`Starting pairing code authentication for ${phoneNumber}...`);
+        applyAuthEnv({ mode: 'pair', phoneNumber });
     } else {
-        // Interactive selection
-        console.log('Choose a connection method:\n');
-        console.log('  [1] Pairing Code');
-        console.log('  [2] QR Code\n');
-        
-        const choice = await ask('Select an option: ');
-        close();
-        
-        if (choice === '1') {
-            const phoneNumber = await ask('Enter your WhatsApp phone number: ');
-            const cleaned = phoneNumber.replace(/[^0-9]/g, '');
-            
-            if (!cleaned || cleaned.length < 8) {
-                logger.error('Invalid phone number');
-                process.exit(1);
-            }
-            
-            process.env.EDBOTS_AUTH_MODE = 'pair';
-            process.env.EDBOTS_PHONE_NUMBER = cleaned;
-        } else {
-            process.env.EDBOTS_AUTH_MODE = 'qr';
-        }
+        // Interactive selection — same menu as `edbots start` (no timer).
+        const selection = await selectAuth();
+        applyAuthEnv(selection);
     }
 
     // Launch the bot
@@ -84,6 +58,8 @@ async function pair() {
     initializeCrashProtection();
     startCleanup();
     configManager.syncToLegacy();
+
+    logger.info('Initializing EDBots System...\n');
 
     const { startBot } = require('../../../core/engine');
     await startBot();
