@@ -24,7 +24,7 @@ module.exports = {
 
 📛 *Full Name:* Edun Oluwadarasimi David
 📧 *Email:* davidedun2010@gmail.com
-📱 *Phone:* +2349028375495
+📱 *Contact:* Request via email
 🏢 *Role:* Fullstack Developer & CEO, Smart Tech Programming
 🌐 *Projects:* Bots, Web Apps, AI Tools, Automation Systems
 🛠 *Skills:* Node.js, JavaScript, Python, AI, WhatsApp Bots, Web Development

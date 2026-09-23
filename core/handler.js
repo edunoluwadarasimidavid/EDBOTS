@@ -22,6 +22,11 @@ const modeManager = require('../utils/modeManager');
 const smartAutoReply = require('../utils/smartAutoReply');
 const advancedAntiBan = require('../utils/advancedAntiBan');
 
+// Control-layer gates (additive): the REST API can disable commands globally
+// and turn the AI engine on/off. Defaults keep original behavior.
+const commandToggles = require('../utils/commandToggles');
+const runtimeFlags = require('../utils/runtimeFlags');
+
 // Group metadata cache
 const groupMetadataCache = new Map();
 const CACHE_TTL = 60000; // 1 minute
@@ -70,10 +75,10 @@ const isOwner = (sock, senderRaw, fromMe = false) => {
     if (!senderRaw) return false;
     
     const sender = normalizeNumber(senderRaw);
-    const owner = normalizeNumber(process.env.OWNER_NUMBER || config.owner[0] || "2349160359154");
+    const owner = normalizeNumber((process.env.OWNER_NUMBER || '').split(',')[0] || config.owner[0] || "");
     const botNumber = normalizeNumber(sock.user.id.split(':')[0]);
     
-    return sender === owner || sender === botNumber;
+    return (owner !== '' && sender === owner) || sender === botNumber;
 };
 
 /**
@@ -213,6 +218,12 @@ const handleMessage = async (sock, msg, commands) => {
             if (command) {
                 // 🔐 GLOBAL SECURITY ENFORCEMENT
 
+                // 0. GLOBALLY DISABLED COMMAND CHECK (REST API control layer)
+                if (commandToggles.isDisabled(commandName)) {
+                   console.log(`[SECURITY BLOCK] Sender: ${senderRaw} Command: ${commandName} Reason: globally disabled via API`);
+                   return context.reply('⛔ This command is currently disabled.');
+                }
+
                 // 1. BANNED CHECK (Redundant but safe)
                 if (isBanned(senderRaw)) {
                    console.log(`[SECURITY BLOCK] Sender: ${senderRaw} Command: ${commandName} Reason: banned`);
@@ -278,6 +289,10 @@ const handleMessage = async (sock, msg, commands) => {
 
         // AI Logic - uses unified engine (Puter primary, multi-provider fallback)
         if (fullBody.toLowerCase().startsWith('ai:')) {
+            // AI engine gate (REST API control layer). Silently ignore when off,
+            // matching existing behavior when AI is unavailable.
+            if (!runtimeFlags.getAiEnabled()) return;
+
             const question = fullBody.slice(3).trim();
             const currentMode = modeManager.getMode(from);
             const answer = await askAI(question, currentMode === 'business' ? 'business' : 'personal');

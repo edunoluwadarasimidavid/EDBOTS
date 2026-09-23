@@ -2,9 +2,19 @@
  * Global Configuration for WhatsApp MD Bot
  */
 
+// Bot Owner Configuration
+// Owner numbers come from the environment (never hardcoded for open source).
+// OWNER_NUMBER is a comma-separated list of WhatsApp numbers that own the bot.
+const envOwnerNumbers = (process.env.OWNER_NUMBER || '')
+    .split(',')
+    .map(n => n.trim())
+    .filter(n => /^[0-9]{8,15}$/.test(n));
+
 module.exports = {
     // Bot Owner Configuration
-    owner: ['2349028375495','2349028375495'],
+    owner: envOwnerNumbers.length > 0
+        ? [...envOwnerNumbers, ...envOwnerNumbers]
+        : ['', ''], // set OWNER_NUMBER=2348012345678 in .env
     ownerName: ['EDBOTS', 'Edun Oluwadarasimi David'],
     
     // Bot Configuration
@@ -53,11 +63,11 @@ module.exports = {
       autosticker: false
     },
     
-    // API Keys
+    // API Keys (loaded from environment — never hardcoded)
     apiKeys: {
-      openai: '',
-      deepai: '',
-      remove_bg: 'Rz66NjLymx2ZY7YoUAuroGTM'
+      openai: process.env.OPENAI_API_KEY || '',
+      deepai: process.env.DEEPAI_API_KEY || '',
+      remove_bg: process.env.REMOVE_BG_API_KEY || ''
     },
     
     // Message Configuration

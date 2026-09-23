@@ -125,6 +125,19 @@ async function launchBot() {
     // Start cleanup system
     startCleanup();
 
+    // Start REST API control layer (additive, non-fatal)
+    try {
+        const apiConfig = require('../../../api/core/config');
+        if (apiConfig.enabled) {
+            const { start } = require('../../../api/server');
+            start();
+        } else {
+            logger.info('REST API disabled (EDBOTS_API_ENABLED=false)');
+        }
+    } catch (err) {
+        logger.error(`REST API failed to start (bot continues): ${err.message}`);
+    }
+
     logger.info('Initializing EDBots System...\n');
 
     // Start the bot engine (same as original index.js)

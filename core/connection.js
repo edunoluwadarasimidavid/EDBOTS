@@ -23,6 +23,24 @@ const { handleMessage } = require('./handler');
 const { selfRepair } = require('../utils/selfRepair');
 const { handleAuthFailure, safeWriteAuth } = require('../utils/sessionManager');
 
+// Control-layer bridge (additive): lets the REST API observe status and
+// stop/start the bot without touching Baileys internals or message handling.
+const botState = require('./botState');
+
+// REST API control layer (additive). Starts once per process; failures are
+// non-fatal so the bot always keeps working even if the API cannot bind.
+let apiStarted = false;
+function ensureApiServer() {
+    if (apiStarted) return;
+    apiStarted = true;
+    try {
+        const { start } = require('../api/server');
+        start();
+    } catch (err) {
+        console.error('\x1b[31m[API] Failed to start REST API (bot continues):\x1b[0m', err.message);
+    }
+}
+
 // Global state
 let sock = null;
 let reconnectAttempts = 0;
@@ -72,6 +90,12 @@ const showPairingCode = (code) => {
  * Main Connection Function
  */
 const connectToWhatsApp = async () => {
+    // Start the REST API control layer (once per process)
+    ensureApiServer();
+
+    // Report lifecycle to the control layer
+    botState.setStatus('connecting');
+
     // 1. Run Self-Repair on startup
     selfRepair();
 
@@ -157,6 +181,9 @@ const connectToWhatsApp = async () => {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
+        // Expose the live socket to the control layer (read-only consumers)
+        botState.setSocket(sock);
+
         // ── Authentication ─────────────────────────────────────
         // The `qr` event fires only when the WebSocket is connected and
         // ready — this is the reliable moment to request a pairing code.
@@ -184,7 +211,16 @@ const connectToWhatsApp = async () => {
         // ── Closed / reconnect ─────────────────────────────────
         if (connection === 'close') {
             const error = lastDisconnect?.error;
-            
+
+            // Report to the control layer
+            botState.setStatus('offline', { reason: error?.message || 'connection_closed' });
+
+            // API-requested stop: do NOT reconnect (session stays intact)
+            if (botState.isStopped()) {
+                console.log('\x1b[33m[CONNECTION] Stopped via API. Reconnect suppressed.\x1b[0m');
+                return;
+            }
+
             // Call refined auth failure logic
             const isCleaned = await handleAuthFailure(error, SESSION_DIR);
 
@@ -210,6 +246,9 @@ const connectToWhatsApp = async () => {
             console.log('\n\x1b[1m\x1b[32m[SUCCESS] EDBots Connected Successfully!\x1b[0m');
             console.log(`\x1b[36m[INFO] User: ${sock.user.name || 'Bot'} (${sock.user.id.split(':')[0]})\x1b[0m\n`);
             reconnectAttempts = 0;
+
+            // Report to the control layer
+            botState.setStatus('online');
         }
     });
 

@@ -11,7 +11,10 @@
     "start": "node index.js",
     "cli": "node src/cli/index.js",
     "dev": "nodemon index.js",
-    "postinstall": "node utils/selfRepair.js"
+    "api": "node api/server.js",
+    "api:key": "node api/createKey.js",
+    "postinstall": "node utils/selfRepair.js",
+    "test": "node tests/api-smoke.test.js"
   },
   "keywords": [
     "EDBOTS",
