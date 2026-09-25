@@ -75,7 +75,7 @@ const isOwner = (sock, senderRaw, fromMe = false) => {
     if (!senderRaw) return false;
     
     const sender = normalizeNumber(senderRaw);
-    const owner = normalizeNumber((process.env.OWNER_NUMBER || '').split(',')[0] || config.owner[0] || "");
+    const owner = normalizeNumber(config.owner[0] || "");
     const botNumber = normalizeNumber(sock.user.id.split(':')[0]);
     
     return (owner !== '' && sender === owner) || sender === botNumber;

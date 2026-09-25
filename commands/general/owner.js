@@ -18,7 +18,11 @@ module.exports = {
 
             // Owner numbers array -> convert each to a vCard
             const ownerNames = Array.isArray(config.ownerName) ? config.ownerName : [config.ownerName];
-            const vCards = config.ownerNumber.map((num, index) => {
+            const ownerNumbers = Array.isArray(config.ownerNumber) ? config.ownerNumber.filter(Boolean) : [];
+            if (ownerNumbers.length === 0) {
+                return extra.reply('⚠️ No owner number configured. Add one to the owners list in config.js and restart.');
+            }
+            const vCards = ownerNumbers.map((num, index) => {
                 const name = ownerNames[index] || ownerNames[0] || 'Bot Owner';
                 return {
                     vcard: `

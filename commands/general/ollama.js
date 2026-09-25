@@ -4,8 +4,11 @@
  */
 
 const axios = require('axios');
+const config = require('../../config');
 
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+// URL preference lives in config.js (ai.ollamaUrl); an env override is kept
+// for local dev convenience but is not part of the shipped template.
+const OLLAMA_URL = process.env.OLLAMA_URL || config.ai.ollamaUrl;
 
 module.exports = {
     name: 'ollama',
@@ -27,7 +30,7 @@ module.exports = {
                     `*Setup:*\n` +
                     `1. Install Ollama: https://ollama.ai\n` +
                     `2. Pull a model: \`ollama pull llama3.1\`\n` +
-                    `3. Set OLLAMA_URL in .env (default: localhost:11434)`
+                    `3. Edit ai.ollamaUrl in config.js (default: localhost:11434)`
                 );
             }
 
