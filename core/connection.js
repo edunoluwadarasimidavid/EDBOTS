@@ -76,7 +76,9 @@ const question = (text) => {
 /**
  * Headless web-pairing banner. The URL is auto-detected (config.js override,
  * platform env, or learned from the first browser request) — no env var
- * setup is required. LAN candidates are shown as extra options.
+ * setup is required. Every address candidate is honestly labeled, because
+ * container platforms hand out internal-only IPs (172.x) that cannot be
+ * opened from the internet.
  */
 const printWebPairingBanner = () => {
     let webPairConfig = null;
@@ -92,30 +94,36 @@ const printWebPairingBanner = () => {
     console.log('\x1b[1m\x1b[36m╰────────────────────────────────────────────╯\x1b[0m');
     console.log('');
 
-    const known = webPairConfig && webPairConfig.getBaseUrl();
-    if (known) {
-        const src = webPairConfig.publicUrlSource === 'config' ? 'from config.js'
-            : webPairConfig.publicUrlSource === 'platform' ? `detected (${webPairConfig.platformVar})`
-            : '';
-        console.log(`\x1b[1m\x1b[32m  Open this URL in your browser:\x1b[0m`);
-        console.log(`\x1b[1m\x1b[32m  ${known}/pair\x1b[0m`);
-        if (src) console.log(`\x1b[2m  ${src}\x1b[0m`);
-    } else {
-        console.log('\x1b[36m  No interactive terminal — authentication moved to the browser.\x1b[0m');
-        console.log('');
-        const lanIp = webPairConfig && webPairConfig.primaryLanIp();
-        const port = webPairConfig ? webPairConfig.port : 3000;
-        if (lanIp) {
-            console.log(`\x1b[1m\x1b[32m  On the same network, open:\x1b[0m`);
-            console.log(`\x1b[1m\x1b[32m  http://${lanIp}:${port}/pair\x1b[0m`);
-        } else {
-            console.log(`\x1b[36m  Open http://<this-server>:${port}/pair\x1b[0m`);
+    const candidates = webPairConfig ? webPairConfig.candidates() : [];
+    if (candidates.length > 0) {
+        console.log('\x1b[1m  Open in your browser:\x1b[0m');
+        for (const c of candidates) {
+            const mark = c.reachable ? '\x1b[1m\x1b[32m' : '\x1b[2m';
+            console.log(`  ${mark}${c.url}\x1b[0m \x1b[2m(${c.label})\x1b[0m`);
         }
-        console.log('');
-        console.log('\x1b[2m  Behind a proxy/tunnel? The exact URL is learned from your first\x1b[0m');
-        console.log('\x1b[2m  visit — open https://your-domain/pair and the page takes over.\x1b[0m');
+    } else {
+        const port = webPairConfig ? webPairConfig.port : 3000;
+        console.log(`\x1b[36m  Open http://<this-server>:${port}/pair\x1b[0m`);
     }
+
     console.log('');
+    console.log('\x1b[2m  Hosted behind a domain/proxy? Just open https://your-domain/pair —\x1b[0m');
+    console.log('\x1b[2m  the exact URL is learned from your visit and confirmed here.\x1b[0m');
+    console.log('');
+
+    // Fire-and-forget: when the server's true public IP resolves, print it.
+    // Never blocks startup; silently skipped on offline firewalled hosts.
+    try {
+        const { fetchPublicIp } = require('../api/webpair/publicUrl');
+        fetchPublicIp().then((ip) => {
+            if (ip && webPairConfig) {
+                webPairConfig.setPublicIp(ip);
+                console.log(`\x1b[36m[AUTH] Server public IP: ${ip} — if hosted on a VPS, http://${ip}:${webPairConfig.port}/pair may work (port must be open).\x1b[0m`);
+            }
+        }).catch(() => {});
+    } catch {
+        /* public IP detection is best-effort only */
+    }
 };
 
 /**

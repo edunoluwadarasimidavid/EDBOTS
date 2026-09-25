@@ -168,6 +168,12 @@ The pairing URL is discovered automatically, in this order:
    printed to the console (works behind any proxy, tunnel, or custom domain)
 4. LAN IP candidates (e.g. `http://192.168.1.20:3000/pair`) for VPS/home servers
 
+On container hosts (Render, Docker, Kubernetes) the machine's own IP is
+often an internal-only address (`172.x…`); EDBOTS labels such candidates
+**“internal network only (container IP)”** and additionally looks up the
+server's real public egress IP, printing it as:
+`[AUTH] Server public IP: 51.x.x.x — …`.
+
 The console prints something like:
 
 ```text

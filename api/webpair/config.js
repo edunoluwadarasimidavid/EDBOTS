@@ -108,6 +108,53 @@ const webPairConfig = {
     /** Current server's LAN IPv4 (for console hints). */
     primaryLanIp() {
         return this.lanIps[0] || null;
+    },
+
+    // ── Reachability-aware candidates ─────────────────────────────────
+    // Every address gets an honest label: containers hold internal-only
+    // IPs (172.x etc.) that look plausible but are unreachable from the
+    // internet — the user must know which is which.
+    _publicIp: null,
+
+    setPublicIp(ip) {
+        this._publicIp = ip || null;
+    },
+
+    getPublicIp() {
+        return this._publicIp;
+    },
+
+    /**
+     * Console/UI candidate list, best first.
+     * @returns {Array<{url: string, label: string, reachable: boolean}>}
+     */
+    candidates() {
+        const list = [];
+        const base = this.getBaseUrl();
+        if (base) {
+            const isLocalBase = /^(http:\/\/)(localhost|127\.0\.0\.1)/.test(base);
+            list.push({
+                url: `${base}/pair`,
+                label: isLocalBase ? 'same machine only' : 'detected — use this',
+                reachable: !isLocalBase
+            });
+        }
+        if (this._publicIp) {
+            list.push({
+                url: `http://${this._publicIp}:${this.port}/pair`,
+                label: 'server public IP — works if the port is open',
+                reachable: true
+            });
+        }
+        for (const ip of this.lanIps) {
+            const internalOnly = require('./publicUrl').isPrivateIp(ip);
+            list.push({
+                url: `http://${ip}:${this.port}/pair`,
+                label: internalOnly ? 'internal network only (container IP — not reachable from the internet)' : 'same network as the server',
+                reachable: !internalOnly
+            });
+        }
+        return list;
     }
 };
 

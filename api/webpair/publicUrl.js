@@ -16,6 +16,7 @@
  */
 
 const os = require('os');
+const http = require('http');
 
 /** Platform-injected URL/host env vars (checked in order). */
 const PLATFORM_ENV_VARS = [
@@ -61,7 +62,12 @@ function gitpodUrl(workspaceUrl, port) {
     }
 }
 
-/** Collect non-internal IPv4 addresses of this machine (LAN/VPS). */
+/**
+ * Collect non-internal IPv4 addresses of this machine.
+ * Labels matter on containers: Docker/K8s pod IPs (172.16-31.x, 10.x,
+ * 192.168.x) are NOT reachable from the internet, only from the same
+ * internal network. Callers must present them accordingly (see labels).
+ */
 function lanAddresses() {
     const out = [];
     try {
@@ -77,6 +83,65 @@ function lanAddresses() {
         /* keep empty */
     }
     return out;
+}
+
+/** RFC1918 / CGNAT / link-local = not publicly routable. */
+function isPrivateIp(ip) {
+    return /^(10\.|127\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.)/.test(ip);
+}
+
+// ── Public egress IP detection ────────────────────────────────────────
+// On Render/Railway/VPS the container holds an internal IP (often 172.x)
+// while the outside world reaches it via a different public IP. Ask a
+// couple of well-known echo services (cheap GET, no key, no dependency).
+let publicIpCache = { value: null, at: 0, inflight: null };
+
+function fetchPublicIp(timeoutMs = 4000) {
+    if (publicIpCache.value && Date.now() - publicIpCache.at < 10 * 60 * 1000) {
+        return Promise.resolve(publicIpCache.value);
+    }
+    if (publicIpCache.inflight) return publicIpCache.inflight;
+
+    publicIpCache.inflight = new Promise((resolve) => {
+        const endpoints = [
+            'http://ip1.ipify.org',
+            'http://api.ipify.org',
+            'http://ifconfig.me/ip'
+        ];
+
+        const tryNext = (idx) => {
+            if (idx >= endpoints.length) {
+                publicIpCache.inflight = null;
+                return resolve(null);
+            }
+            const req = http.get(endpoints[idx], { timeout: timeoutMs }, (res) => {
+                let data = '';
+                res.setEncoding('utf8');
+                res.on('data', (c) => {
+                    data += c;
+                    if (data.length > 64) req.destroy(); // IPs are short
+                });
+                res.on('end', () => {
+                    const ip = data.trim();
+                    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+                        publicIpCache = { value: ip, at: Date.now(), inflight: null };
+                        resolve(ip);
+                    } else {
+                        tryNext(idx + 1);
+                    }
+                });
+            });
+            req.on('timeout', () => {
+                req.destroy();
+                tryNext(idx + 1);
+            });
+            req.on('error', () => tryNext(idx + 1));
+        };
+
+        tryNext(0);
+    });
+
+    return publicIpCache.inflight;
 }
 
 /**
@@ -115,4 +180,4 @@ function detectPublicUrl(configUrl, port = parseInt(process.env.PORT || '3000', 
     return { url: null, source: null, platformVar: null, lanIps: lanAddresses() };
 }
 
-module.exports = { detectPublicUrl, normalizeOrigin, lanAddresses, PLATFORM_ENV_VARS };
+module.exports = { detectPublicUrl, normalizeOrigin, lanAddresses, isPrivateIp, fetchPublicIp, PLATFORM_ENV_VARS };
