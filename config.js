@@ -54,6 +54,20 @@ module.exports = {
     autoDownload: false,
     autoReply: false,
 
+    // ── Web pairing (headless servers) ───────────────────────────────
+    // First-time WhatsApp authentication UI served at /pair when the bot
+    // runs without an interactive terminal (Render, Railway, VPS, Docker…).
+    // Everything here is OPTIONAL — the URL is auto-detected from the
+    // hosting platform (Render/Railway/Fly/Heroku/Codespaces/…) or learned
+    // from the first browser request, and LAN IPs are shown as fallbacks.
+    // Only set publicUrl if auto-detection can't know your address (e.g. a
+    // custom domain behind a proxy). .env is NOT used for this.
+    webPairing: {
+        enabled: true,
+        // e.g. 'https://my-bot.example.com' — leave '' for auto-detection
+        publicUrl: ''
+    },
+
     // ── AI features ─────────────────────────────────────────────────────
     // Provider preferences live here; provider API keys stay in .env.
     // provider: 'puter' (linked via .puter command) | 'ollama' | 'auto'

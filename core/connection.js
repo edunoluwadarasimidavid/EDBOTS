@@ -74,8 +74,9 @@ const question = (text) => {
 };
 
 /**
- * Headless web-pairing banner. PUBLIC_URL is normalized here; HOST/PORT are
- * respected for the bind (done by the API server), the URL is for humans.
+ * Headless web-pairing banner. The URL is auto-detected (config.js override,
+ * platform env, or learned from the first browser request) — no env var
+ * setup is required. LAN candidates are shown as extra options.
  */
 const printWebPairingBanner = () => {
     let webPairConfig = null;
@@ -85,28 +86,34 @@ const printWebPairingBanner = () => {
         webPairConfig = null;
     }
 
-    const base = webPairConfig && webPairConfig.publicUrl
-        ? webPairConfig.publicUrl
-        : (process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '').replace(/\/pair$/i, '');
-
-    const displayUrl = base ? `${base}/pair` : null;
-
     console.log('\n');
     console.log('\x1b[1m\x1b[36m╭────────────────────────────────────────────╮\x1b[0m');
     console.log('\x1b[1m\x1b[36m│        EDBOTS Web Authentication           │\x1b[0m');
     console.log('\x1b[1m\x1b[36m╰────────────────────────────────────────────╯\x1b[0m');
     console.log('');
-    if (displayUrl) {
+
+    const known = webPairConfig && webPairConfig.getBaseUrl();
+    if (known) {
+        const src = webPairConfig.publicUrlSource === 'config' ? 'from config.js'
+            : webPairConfig.publicUrlSource === 'platform' ? `detected (${webPairConfig.platformVar})`
+            : '';
         console.log(`\x1b[1m\x1b[32m  Open this URL in your browser:\x1b[0m`);
-        console.log(`\x1b[1m\x1b[32m  ${displayUrl}\x1b[0m`);
+        console.log(`\x1b[1m\x1b[32m  ${known}/pair\x1b[0m`);
+        if (src) console.log(`\x1b[2m  ${src}\x1b[0m`);
     } else {
-        console.log('\x1b[33m  No interactive terminal available.\x1b[0m');
+        console.log('\x1b[36m  No interactive terminal — authentication moved to the browser.\x1b[0m');
         console.log('');
-        console.log('\x1b[36m  Web pairing is running. Open it at the server address:\x1b[0m');
-        console.log('\x1b[36m    https://<your-app-host>/pair\x1b[0m');
+        const lanIp = webPairConfig && webPairConfig.primaryLanIp();
+        const port = webPairConfig ? webPairConfig.port : 3000;
+        if (lanIp) {
+            console.log(`\x1b[1m\x1b[32m  On the same network, open:\x1b[0m`);
+            console.log(`\x1b[1m\x1b[32m  http://${lanIp}:${port}/pair\x1b[0m`);
+        } else {
+            console.log(`\x1b[36m  Open http://<this-server>:${port}/pair\x1b[0m`);
+        }
         console.log('');
-        console.log('\x1b[33m  Set PUBLIC_URL in your environment to print the exact URL\x1b[0m');
-        console.log('\x1b[33m  (Render: https://your-app.onrender.com)\x1b[0m');
+        console.log('\x1b[2m  Behind a proxy/tunnel? The exact URL is learned from your first\x1b[0m');
+        console.log('\x1b[2m  visit — open https://your-domain/pair and the page takes over.\x1b[0m');
     }
     console.log('');
 };
@@ -167,9 +174,15 @@ const connectToWhatsApp = async () => {
     const cliAuthHandled = cliAuthMode === 'qr' || cliAuthMode === 'pair';
 
     // Headless detection: no usable interactive stdin (cloud/VPS/Docker).
-    // PUBLIC_URL forces web pairing regardless of TTY so `node index.js` on a
-    // server with a degraded TTY still prints a usable pairing URL.
-    const headless = process.env.PUBLIC_URL || !process.stdin.isTTY || !process.stdout.isTTY;
+    // config.js webPairing.publicUrl also forces web pairing for servers
+    // with a degraded TTY. .env is deliberately not involved here.
+    let cfgWebPairing = {};
+    try {
+        cfgWebPairing = require('../config').webPairing || {};
+    } catch {
+        cfgWebPairing = {};
+    }
+    const headless = cfgWebPairing.publicUrl || !process.stdin.isTTY || !process.stdout.isTTY;
 
     if (cliAuthHandled) {
         // CLI already handled the selection — honor it silently
@@ -296,6 +309,10 @@ const connectToWhatsApp = async () => {
                     console.log('\x1b[33m[AUTH] Falling back to QR Code — scan below:\x1b[0m');
                     qrcode.generate(qr, { small: true });
                 }
+            } else if (headless) {
+                // Web pairing owns the UI: the QR lives in the browser at
+                // /pair (streamed via SSE). Never print it in this terminal.
+                console.log('\x1b[36m[AUTH] QR code ready — open the Web Authentication URL above to scan it.\x1b[0m');
             } else if (!usePairingCode || pairingFailed) {
                 console.log('\x1b[36m[AUTH] Scan the QR Code below (WhatsApp → Linked Devices):\x1b[0m');
                 qrcode.generate(qr, { small: true });

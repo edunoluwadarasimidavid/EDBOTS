@@ -545,7 +545,26 @@ function sendPage(res) {
 
 // ── Route handlers ────────────────────────────────────────────────────────
 
+// Trust proxy hints only when the socket is actually remote — local health
+// checks and CLI probes must not poison the learned URL.
+function learnFromRequest(req) {
+    try {
+        const remote = req.socket && req.socket.remoteAddress;
+        const host = req.headers['x-forwarded-host']?.split(',')[0]?.trim() || req.headers.host;
+        if (!host) return;
+        const isLocal = !remote || /^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1|localhost)$/.test(remote) ||
+            (config.lanIps || []).includes(remote);
+        const changed = config.learnOrigin(host, isLocal);
+        if (changed && !isLocal && !config.publicUrl) {
+            console.log(`\x1b[36m[AUTH] Pairing URL detected from your visit: ${config.getBaseUrl()}/pair\x1b[0m`);
+        }
+    } catch {
+        /* never break the request over URL learning */
+    }
+}
+
 function handlePage(req, res, url) {
+    learnFromRequest(req);
     // First visit with ?token=... : validate + set cookie before showing UI.
     if (url.searchParams.get('token')) {
         if (!authorize(req, res, url)) {
@@ -556,6 +575,7 @@ function handlePage(req, res, url) {
 }
 
 function handleStatus(req, res, url) {
+    learnFromRequest(req);
     if (!authorize(req, res, url)) {
         return sendJson(res, 401, { ok: false, error: { code: 'PAIRING_TOKEN_REQUIRED', message: 'Valid pairing token required.' } });
     }
@@ -564,7 +584,7 @@ function handleStatus(req, res, url) {
         ok: true,
         auth: authEvents.getSnapshot(),
         bot: { status: snap.status, online: snap.status === 'online', user: snap.user },
-        publicUrl: config.publicUrl,
+        publicUrl: config.getBaseUrl(),
         timestamp: new Date().toISOString()
     });
 }

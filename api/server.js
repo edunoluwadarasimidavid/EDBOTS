@@ -46,7 +46,6 @@ async function handleRequest(req, res) {
   // must not inherit API CORS/rate-limiting semantics. Returns false for
   // non-pairing paths so /api is unaffected.
   if (webPair.handle(req, res)) return;
-
   // CORS (also short-circuits OPTIONS preflight)
   if (handleCors(req, res, config.corsOrigins)) return;
 
@@ -143,7 +142,16 @@ function handleError(res, err) {
 
 // ── Server bootstrap ────────────────────────────────────────────────────
 
+// Idempotent: multiple entrypoints (index.js, core/connection.js, the CLI)
+// all call start(); only the first actually binds. This used to crash with
+// EADDRINUSE because each caller kept its own "already started" flag.
+let activeServer = null;
+
 function start() {
+  if (activeServer && activeServer.listening) {
+    return activeServer;
+  }
+
   const server = http.createServer(handleRequest);
 
   server.on('clientError', (err, socket) => {
@@ -152,6 +160,18 @@ function start() {
       socket.destroy();
     } catch {
       /* socket already gone */
+    }
+  });
+
+  // Bind failures (EADDRINUSE, EACCES…) must never kill the bot: the API is
+  // an additive control layer. Log once and keep the process alive.
+  server.on('error', (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error(
+        `\x1b[33m[API] Port ${config.port} already in use — API/web pairing already running. Bot continues.\x1b[0m`
+      );
+    } else {
+      console.error('\x1b[31m[API] Server error (bot continues):\x1b[0m', err && err.message ? err.message : err);
     }
   });
 
@@ -166,6 +186,7 @@ function start() {
     }
   });
 
+  activeServer = server;
   return server;
 }
 

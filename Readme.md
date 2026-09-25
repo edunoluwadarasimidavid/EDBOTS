@@ -147,19 +147,26 @@ EDBOTS starts
    ├─ session found ──> connects silently (no pairing page needed)
    └─ no session
         ├─ interactive terminal ──> existing QR / pairing-code prompts
-        └─ headless (no TTY, or PUBLIC_URL set)
+        └─ headless (no TTY, or config.js publicUrl set)
                  └─ prints the pairing URL + token, serves /pair
+                    (the QR shows ONLY in the browser, never the terminal)
 ```
 
-### Deploying (works on any host)
+### Deploying (works on any host — zero URL configuration)
 
-1. **Set `PUBLIC_URL`** to the address users will open, e.g.
-   `PUBLIC_URL=https://your-app.onrender.com` (scheme + host, no trailing
-   slash). On Render you can also rely on `RENDER_EXTERNAL_URL`, which is
-   detected automatically.
-2. **Bind address/port**: EDBOTS respects `PORT` and binds `0.0.0.0` by
+1. **Bind address/port**: EDBOTS respects `PORT` and binds `0.0.0.0` by
    default (override with `HOST` / `EDBOTS_PAIR_HOST`).
-3. **Start the bot** (`node index.js` or your platform's start command).
+2. **Start the bot** (`node index.js` or your platform's start command).
+
+The pairing URL is discovered automatically, in this order:
+
+1. `webPairing.publicUrl` in **config.js** (only if you set it there)
+2. The hosting platform's own injected variables — Render
+   (`RENDER_EXTERNAL_URL`), Railway, Fly.io, Heroku, Koyeb, GitHub
+   Codespaces, Gitpod, Vercel — detected with no configuration
+3. **The first browser visit** — the exact domain you open is learned and
+   printed to the console (works behind any proxy, tunnel, or custom domain)
+4. LAN IP candidates (e.g. `http://192.168.1.20:3000/pair`) for VPS/home servers
 
 The console prints something like:
 
@@ -170,30 +177,32 @@ The console prints something like:
 
   Open this URL in your browser:
   https://your-app.onrender.com/pair
+  detected (RENDER_EXTERNAL_URL)
 
   Pairing token (paste into the browser when asked):
   9f2c7a…64-hex-characters…
 ```
 
-4. **Open the URL** on your phone or laptop.
-5. **Paste the pairing token** once (shown in the server console). This
+3. **Open the URL** on your phone or laptop.
+4. **Paste the pairing token** once (shown in the server console). This
    protects the pairing page from random visitors — it can trigger WhatsApp
    authentication, so it is gated. The browser remembers it for the session.
-6. **Choose QR Code or Phone Number** and complete authentication in
-   WhatsApp → Linked Devices.
-7. **Wait for the green ✓** — the session is saved and EDBOTS starts
+5. **Choose QR Code or Phone Number** and complete authentication in
+   WhatsApp → Linked Devices. On a headless server the QR code appears only
+   in the browser — it is never printed to the server terminal.
+6. **Wait for the green ✓** — the session is saved and EDBOTS starts
    normally. On restart it reconnects automatically without pairing again.
+
+> **Custom domain behind a proxy?** Set `webPairing.publicUrl` in
+> `config.js`. Deployment settings belong there — `.env` is reserved for
+> REST API / Appwrite server secrets.
 
 ### Render example
 
 - **Build command:** `npm install`
 - **Start command:** `node index.js`
-- **Environment:**
-  - `PUBLIC_URL = https://your-app.onrender.com`
-  - `OWNER_NUMBER`, `EDBOTS_API_KEY` (same as local)
-
-> Render injects `PORT` automatically; EDBOTS binds to it. No other
-> configuration is required.
+- **Environment:** nothing extra — Render's `RENDER_EXTERNAL_URL` and `PORT`
+  are picked up automatically (`OWNER_NUMBER` / `EDBOTS_API_KEY` as usual).
 
 ### Web pairing endpoints
 
@@ -207,15 +216,15 @@ The console prints something like:
 
 Environment variables for web pairing:
 
-| Variable | Default | Purpose |
+| Setting | Default | Purpose |
 |---|---|---|
-| `PUBLIC_URL` | *(auto-detects `RENDER_EXTERNAL_URL`)* | Base URL printed in the banner |
-| `HOST` | `0.0.0.0` | Bind address |
-| `PORT` | `3000` | Bind port (injected by most platforms) |
-| `EDBOTS_PAIR_HOST` | — | Overrides bind host for the pairing server only |
-| `EDBOTS_WEB_PAIRING_ENABLED` | `true` | Set `false` to disable the `/pair` surface |
-| `EDBOTS_PAIRING_TOKEN_TTL_MS` | 24 h | Pairing-token lifetime |
-| `EDBOTS_PAIR_MAX_REQUESTS` | `20` | Max pairing-code requests/hour per token+IP |
+| `webPairing.publicUrl` (config.js) | *(auto)* | Only needed for custom domains behind proxies |
+| `HOST` env | `0.0.0.0` | Bind address |
+| `PORT` env | `3000` | Bind port (injected by most platforms) |
+| `EDBOTS_PAIR_HOST` env | — | Overrides bind host for the pairing server only |
+| `EDBOTS_WEB_PAIRING_ENABLED` env | `true` | Set `false` to disable the `/pair` surface |
+| `EDBOTS_PAIRING_TOKEN_TTL_MS` env | 24 h | Pairing-token lifetime |
+| `EDBOTS_PAIR_MAX_REQUESTS` env | `20` | Max pairing-code requests/hour per token+IP |
 
 ---
 
