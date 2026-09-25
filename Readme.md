@@ -129,6 +129,96 @@ EDBOTS App ──HTTPS──> EDBOTS REST API (/api/*) ──> running bot
 
 ---
 
+## 📱 Web Pairing on Headless Servers
+
+On platforms without an interactive terminal (Render, Railway, Docker, VPS
+under systemd, etc.), EDBOTS automatically starts a **web pairing interface**
+at `/pair` instead of printing a QR code to a terminal you can't see. It
+supports **both** QR-code and phone-number/pairing-code authentication, and
+updates live in the browser.
+
+Local machines with a real terminal keep the existing interactive flow —
+nothing changes there.
+
+### How it works
+
+```
+EDBOTS starts
+   ├─ session found ──> connects silently (no pairing page needed)
+   └─ no session
+        ├─ interactive terminal ──> existing QR / pairing-code prompts
+        └─ headless (no TTY, or PUBLIC_URL set)
+                 └─ prints the pairing URL + token, serves /pair
+```
+
+### Deploying (works on any host)
+
+1. **Set `PUBLIC_URL`** to the address users will open, e.g.
+   `PUBLIC_URL=https://your-app.onrender.com` (scheme + host, no trailing
+   slash). On Render you can also rely on `RENDER_EXTERNAL_URL`, which is
+   detected automatically.
+2. **Bind address/port**: EDBOTS respects `PORT` and binds `0.0.0.0` by
+   default (override with `HOST` / `EDBOTS_PAIR_HOST`).
+3. **Start the bot** (`node index.js` or your platform's start command).
+
+The console prints something like:
+
+```text
+╭────────────────────────────────────────────╮
+│        EDBOTS Web Authentication           │
+╰────────────────────────────────────────────╯
+
+  Open this URL in your browser:
+  https://your-app.onrender.com/pair
+
+  Pairing token (paste into the browser when asked):
+  9f2c7a…64-hex-characters…
+```
+
+4. **Open the URL** on your phone or laptop.
+5. **Paste the pairing token** once (shown in the server console). This
+   protects the pairing page from random visitors — it can trigger WhatsApp
+   authentication, so it is gated. The browser remembers it for the session.
+6. **Choose QR Code or Phone Number** and complete authentication in
+   WhatsApp → Linked Devices.
+7. **Wait for the green ✓** — the session is saved and EDBOTS starts
+   normally. On restart it reconnects automatically without pairing again.
+
+### Render example
+
+- **Build command:** `npm install`
+- **Start command:** `node index.js`
+- **Environment:**
+  - `PUBLIC_URL = https://your-app.onrender.com`
+  - `OWNER_NUMBER`, `EDBOTS_API_KEY` (same as local)
+
+> Render injects `PORT` automatically; EDBOTS binds to it. No other
+> configuration is required.
+
+### Web pairing endpoints
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /pair` | public page | HTML interface (token required to see auth data) |
+| `GET /pair/status` | pairing token | auth state snapshot (no credentials) |
+| `GET /pair/events` | pairing token | live SSE stream: QR / code / state changes |
+| `POST /pair/request-code` | pairing token + rate limit | request a pairing code |
+| `POST /pair/reset` | pairing token | reset the pairing UI state |
+
+Environment variables for web pairing:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PUBLIC_URL` | *(auto-detects `RENDER_EXTERNAL_URL`)* | Base URL printed in the banner |
+| `HOST` | `0.0.0.0` | Bind address |
+| `PORT` | `3000` | Bind port (injected by most platforms) |
+| `EDBOTS_PAIR_HOST` | — | Overrides bind host for the pairing server only |
+| `EDBOTS_WEB_PAIRING_ENABLED` | `true` | Set `false` to disable the `/pair` surface |
+| `EDBOTS_PAIRING_TOKEN_TTL_MS` | 24 h | Pairing-token lifetime |
+| `EDBOTS_PAIR_MAX_REQUESTS` | `20` | Max pairing-code requests/hour per token+IP |
+
+---
+
 ## ✨ Features
 
 - **Anti-ban architecture** — human-like delays, per-user rate limits, typing presence, spam/loop protection
@@ -148,7 +238,7 @@ npm start                # start bot + API
 npm run api              # API only
 npm run api:key          # create a per-user API key
 npm run cli              # interactive CLI (start, customize, doctor…)
-node temp/api-smoke.js   # API smoke tests (35 checks)
+npm test                 # API + web-pairing smoke tests (48 checks)
 ```
 
 ### CLI

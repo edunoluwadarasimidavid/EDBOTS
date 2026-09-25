@@ -6,6 +6,8 @@
 process.env.EDBOTS_API_PORT = '3777';
 process.env.EDBOTS_API_KEY = 'smoke-test-key-123';
 process.env.EDBOTS_API_CORS_ORIGINS = 'https://app.example.com';
+// Web pairing test config: fixed token file so we can restore it after.
+process.env.PORT = '3777';
 
 const assert = require('assert');
 const http = require('http');
@@ -43,6 +45,49 @@ function request(method, path, body, headers = {}) {
 
 const auth = { 'X-API-Key': KEY };
 
+// ── Web pairing helpers ─────────────────────────────────────────────
+const tokenFile = require('path').join(__dirname, '..', 'data', 'pairingToken.json');
+let pairingTokenBackup = null;
+
+/** Generate a fresh pairing token for tests (returns plaintext). */
+function mintPairingToken() {
+  const tokenStore = require('../api/webpair/tokenStore');
+  return tokenStore.create();
+}
+
+/** Read an SSE stream until `count` data frames arrive or timeout. */
+function readSseFrames(path, headers, count, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const frames = [];
+    const req = http.request(`${BASE}${path}`, { headers }, (res) => {
+      let buf = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        buf += chunk;
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) !== -1) {
+          const raw = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          const line = raw.split('\n').find((l) => l.startsWith('data: '));
+          if (line) {
+            try { frames.push(JSON.parse(line.slice(6))); } catch { /* skip */ }
+          }
+          if (frames.length >= count) {
+            req.destroy();
+            resolve(frames);
+            return;
+          }
+        }
+      });
+      res.on('end', () => resolve(frames));
+      res.on('error', () => resolve(frames));
+    });
+    req.on('error', () => resolve(frames));
+    req.end();
+    setTimeout(() => { req.destroy(); resolve(frames); }, timeoutMs);
+  });
+}
+
 let snapshotConfig = null;
 let togglesBefore = null;
 
@@ -64,6 +109,7 @@ async function main() {
   const togPath = require('path').join(__dirname, '..', 'data', 'commandToggles.json');
   snapshotConfig = fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf8') : null;
   togglesBefore = fs.existsSync(togPath) ? fs.readFileSync(togPath, 'utf8') : null;
+  pairingTokenBackup = fs.existsSync(tokenFile) ? fs.readFileSync(tokenFile, 'utf8') : null;
 
   try {
     // 1. Health (public)
@@ -190,13 +236,64 @@ async function main() {
     let limited = false;
     for (let i = 0; i < 130; i++) {
       const r = await request('GET', '/api/status', null, { 'X-API-Key': 'rate-limit-probe' });
+      if (r.status === 200 || r.status === 401) continue; // 401 = auth failed before rate check
       if (r.status === 429) { limited = true; break; }
     }
     check('rate limiting kicks in', limited);
+
+    // ══ Web pairing ═══════════════════════════════════════════════════
+    // NOTE: these checks run against the same server (webpair is mounted
+    // BEFORE /api dispatch). The pairing token is minted for the test.
+    const wpToken = mintPairingToken();
+    check('pairing token minted', typeof wpToken === 'string' && wpToken.length >= 32);
+
+    // Page is public HTML
+    const page = await request('GET', '/pair');
+    check('pair page 200 HTML', page.status === 200 && /EDBOTS/.test(page.raw) && /Pairing token required/.test(page.raw));
+
+    // Sensitive endpoints are gated without a token
+    const stNoTok = await request('GET', '/pair/status');
+    check('pair/status no-token 401', stNoTok.status === 401);
+
+    const rcNoTok = await request('POST', '/pair/request-code', { phoneNumber: '2348012345678' });
+    check('pair/request-code no-token 401', rcNoTok.status === 401);
+
+    const evNoTok = await request('GET', '/pair/events');
+    check('pair/events no-token 401', evNoTok.status === 401);
+
+    // With token: status exposes only safe fields
+    const stTok = await request('GET', `/pair/status?token=${wpToken}`);
+    const stTokStr = stTok.raw || '';
+    check('pair/status token 200', stTok.status === 200 && stTok.json.ok === true);
+    check('pair/status has state', typeof stTok.json.auth.state === 'string');
+    check('pair/status no creds', !/creds|session-|privatekey|prekey/i.test(stTokStr));
+
+    // SSE: first frame is a snapshot with a state
+    const frames = await readSseFrames(`/pair/events?token=${wpToken}`, null, 1);
+    check('pair/events snapshot frame', frames.length >= 1 && frames[0].type === 'snapshot' && typeof frames[0].state === 'string');
+
+    // request-code validation: bad number -> 400
+    const rcBad = await request('POST', '/pair/request-code', { phoneNumber: '123' }, { 'X-Pairing-Token': wpToken });
+    check('pair/request-code bad number 400', rcBad.status === 400 && rcBad.json.error.code === 'INVALID_PHONE');
+
+    // request-code with valid number while no socket -> 503 SOCKET_NOT_READY (no WhatsApp here)
+    const rcOk = await request('POST', '/pair/request-code', { phoneNumber: '2348012345678' }, { 'X-Pairing-Token': wpToken });
+    check('pair/request-code no-socket 503', rcOk.status === 503 && rcOk.json.error.code === 'SOCKET_NOT_READY');
+
+    // reset endpoint
+    const rs = await request('POST', '/pair/reset', {}, { 'X-Pairing-Token': wpToken });
+    check('pair/reset 200', rs.status === 200 && rs.json.ok === true);
+
+    // 404 on unknown pairing path (falls through to /api 404 handling)
+    const wp404 = await request('GET', '/pair/nope');
+    check('pair unknown path 404', wp404.status === 404);
   } finally {
     server.close();
 
     // Restore mutated state
+    if (pairingTokenBackup !== null) fs.writeFileSync(tokenFile, pairingTokenBackup);
+    else if (fs.existsSync(tokenFile)) fs.unlinkSync(tokenFile);
+
     if (snapshotConfig !== null) fs.writeFileSync(cfgPath, snapshotConfig);
     else if (fs.existsSync(cfgPath)) fs.unlinkSync(cfgPath);
 

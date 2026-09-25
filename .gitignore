@@ -45,6 +45,9 @@ admin.key
 # API keys (hashed only, but never publish)
 data/apiKeys.json
 
+# Web pairing token (hashed, but never publish)
+data/pairingToken.json
+
 # Runtime data files (regenerated on first boot; never contain code)
 data/analytics.json
 data/autoReplies.json

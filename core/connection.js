@@ -27,6 +27,10 @@ const { handleAuthFailure, safeWriteAuth } = require('../utils/sessionManager');
 // stop/start the bot without touching Baileys internals or message handling.
 const botState = require('./botState');
 
+// Auth state/event hub: publishes REAL Baileys events (QR, pairing code,
+// connected, logged out) to the web pairing interface via SSE.
+const authEvents = require('./authEvents');
+
 // REST API control layer (additive). Starts once per process; failures are
 // non-fatal so the bot always keeps working even if the API cannot bind.
 let apiStarted = false;
@@ -67,6 +71,44 @@ const question = (text) => {
             resolve(answer.trim());
         });
     });
+};
+
+/**
+ * Headless web-pairing banner. PUBLIC_URL is normalized here; HOST/PORT are
+ * respected for the bind (done by the API server), the URL is for humans.
+ */
+const printWebPairingBanner = () => {
+    let webPairConfig = null;
+    try {
+        webPairConfig = require('../api/webpair/config');
+    } catch {
+        webPairConfig = null;
+    }
+
+    const base = webPairConfig && webPairConfig.publicUrl
+        ? webPairConfig.publicUrl
+        : (process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '').replace(/\/pair$/i, '');
+
+    const displayUrl = base ? `${base}/pair` : null;
+
+    console.log('\n');
+    console.log('\x1b[1m\x1b[36m╭────────────────────────────────────────────╮\x1b[0m');
+    console.log('\x1b[1m\x1b[36m│        EDBOTS Web Authentication           │\x1b[0m');
+    console.log('\x1b[1m\x1b[36m╰────────────────────────────────────────────╯\x1b[0m');
+    console.log('');
+    if (displayUrl) {
+        console.log(`\x1b[1m\x1b[32m  Open this URL in your browser:\x1b[0m`);
+        console.log(`\x1b[1m\x1b[32m  ${displayUrl}\x1b[0m`);
+    } else {
+        console.log('\x1b[33m  No interactive terminal available.\x1b[0m');
+        console.log('');
+        console.log('\x1b[36m  Web pairing is running. Open it at the server address:\x1b[0m');
+        console.log('\x1b[36m    https://<your-app-host>/pair\x1b[0m');
+        console.log('');
+        console.log('\x1b[33m  Set PUBLIC_URL in your environment to print the exact URL\x1b[0m');
+        console.log('\x1b[33m  (Render: https://your-app.onrender.com)\x1b[0m');
+    }
+    console.log('');
 };
 
 /**
@@ -124,6 +166,11 @@ const connectToWhatsApp = async () => {
     const cliAuthMode = process.env.EDBOTS_AUTH_MODE || '';
     const cliAuthHandled = cliAuthMode === 'qr' || cliAuthMode === 'pair';
 
+    // Headless detection: no usable interactive stdin (cloud/VPS/Docker).
+    // PUBLIC_URL forces web pairing regardless of TTY so `node index.js` on a
+    // server with a degraded TTY still prints a usable pairing URL.
+    const headless = process.env.PUBLIC_URL || !process.stdin.isTTY || !process.stdout.isTTY;
+
     if (cliAuthHandled) {
         // CLI already handled the selection — honor it silently
         if (cliAuthMode === 'pair') {
@@ -133,6 +180,29 @@ const connectToWhatsApp = async () => {
                 console.log('\x1b[31m[AUTH] CLI requested pairing mode but no phone number was set. Defaulting to QR Code.\x1b[0m');
                 usePairingCode = false;
             }
+        }
+    } else if (headless && !state.creds.me && !state.creds.registered) {
+        // Headless/cloud AND no usable session: the web pairing interface
+        // owns first-time auth. QR arrives via the normal Baileys 'qr'
+        // event and streams to the browser over SSE; pairing codes are
+        // requested from the web UI. (With an existing session this branch
+        // is skipped and the bot connects silently — no pairing URL.)
+        authEvents.setState('WAITING_FOR_AUTH');
+        printWebPairingBanner();
+
+        // Create/refresh the pairing token (printed once to this console —
+        // the owner pastes it into /pair to unlock the sensitive UI).
+        try {
+            const tokenStore = require('../api/webpair/tokenStore');
+            const plaintext = tokenStore.ensure();
+            if (plaintext) {
+                console.log('');
+                console.log('\x1b[33m  Pairing token (paste into the browser when asked):\x1b[0m');
+                console.log(`\x1b[1m\x1b[32m  ${plaintext}\x1b[0m`);
+                console.log('');
+            }
+        } catch (err) {
+            console.log('\x1b[33m[AUTH] Pairing token unavailable:', (err && err.message) || err, '\x1b[0m');
         }
     } else if (!state.creds.me && !state.creds.registered) {
         if (process.stdin.isTTY) {
@@ -190,6 +260,30 @@ const connectToWhatsApp = async () => {
         // Requesting it earlier races against the socket handshake and
         // fails silently, which is why the code never showed before.
         if (qr) {
+            // Publish every QR WhatsApp issues to the web UI (SSE). It is
+            // rendered to a PNG data-URL — the raw QR string stays on the
+            // server and never crosses the wire.
+            authEvents.setQr(qr);
+
+            // Web-initiated pairing: botState holds a number queued by the
+            // browser. This qr event is the safe moment to call WhatsApp —
+            // requesting earlier races the socket handshake and fails.
+            const webNumber = botState.consumeWebPairingNumber();
+            if (webNumber && !pairingRequested) {
+                pairingRequested = true;
+                try {
+                    console.log(`\x1b[33m[AUTH] Web pairing: requesting pairing code for ${webNumber}...\x1b[0m`);
+                    const code = await sock.requestPairingCode(webNumber);
+                    authEvents.setPairingCode(code);
+                    pairingFailed = false;
+                } catch (err) {
+                    pairingFailed = true;
+                    console.error('\x1b[31m[AUTH] Web pairing code request failed:\x1b[0m', err && err.message ? err.message : err);
+                    botState.setWebPairingError(err && err.message ? err.message : 'pairing failed');
+                }
+                return; // next qr event (or a fresh attempt) re-evaluates
+            }
+
             if (usePairingCode && !pairingRequested) {
                 pairingRequested = true;
                 try {
@@ -214,6 +308,18 @@ const connectToWhatsApp = async () => {
 
             // Report to the control layer
             botState.setStatus('offline', { reason: error?.message || 'connection_closed' });
+
+            // Publish the close to the web pairing UI, classifying the reason:
+            // loggedOut is permanent; everything else is a reconnectable drop
+            // (the UI keeps showing "Connecting…" rather than a failure).
+            const statusCode = new (require('@hapi/boom').Boom)(error)?.output?.statusCode;
+            if (statusCode === 401) {
+                authEvents.setState('LOGGED_OUT');
+            } else if (reconnectAttempts === 0 && !botState.isStopped()) {
+                // First close of this attempt cycle — surface as FAILED so the
+                // user sees something went wrong; reconnection continues below.
+                authEvents.setState('FAILED', { reason: (error && error.message) || 'connection_closed' });
+            }
 
             // API-requested stop: do NOT reconnect (session stays intact)
             if (botState.isStopped()) {
@@ -249,6 +355,11 @@ const connectToWhatsApp = async () => {
 
             // Report to the control layer
             botState.setStatus('online');
+
+            // Auth complete: publish CONNECTED, which also clears any QR/
+            // pairing code still on screen and lets tokenStore consume the
+            // pairing token (done in webpair/routes on state change).
+            authEvents.setState('CONNECTED');
         }
     });
 

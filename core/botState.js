@@ -16,6 +16,12 @@
 
 const state = {
     status: 'offline', // offline | connecting | online
+
+    // Web pairing: when the browser asks for a pairing code, this holds the
+    // phone number until the next QR event, when connection.js calls
+    // sock.requestPairingCode() (the only moment WhatsApp accepts it).
+    webPairingNumber: null,
+    webPairingError: null,
     stoppedByApi: false,
     startedAt: Date.now(),
     lastConnectedAt: null,
@@ -89,6 +95,49 @@ function requestStart() {
     return true;
 }
 
+// ── Web pairing bridge ───────────────────────────────────────────────────
+
+/**
+ * Queue a pairing-code request from the web UI.
+ * Returns { ok, status, code, message } for the HTTP response.
+ */
+function requestWebPairing(phoneNumber) {
+    const authEvents = require('./authEvents');
+
+    if (state.status === 'online') {
+        return { ok: false, status: 409, code: 'ALREADY_CONNECTED', message: 'WhatsApp is already connected.' };
+    }
+    if (!state.sock) {
+        return {
+            ok: false,
+            status: 503,
+            code: 'SOCKET_NOT_READY',
+            message: 'The WhatsApp socket is not ready yet. Wait a few seconds and try again.'
+        }
+    }
+    if (authEvents.needsWebPairingRetry()) {
+        // A previous attempt failed; clear the flag so the retry can proceed.
+        authEvents.clearPairingCode();
+    }
+    state.webPairingNumber = String(phoneNumber || '').replace(/[^0-9]/g, '');
+    authEvents.setState('CONNECTING');
+    return { ok: true };
+}
+
+/** Number queued by the web UI, or null. Consumed by connection.js. */
+function consumeWebPairingNumber() {
+    const n = state.webPairingNumber || null;
+    state.webPairingNumber = null;
+    return n;
+}
+
+function setWebPairingError(message) {
+    state.webPairingError = message || null;
+    if (message) {
+        require('./authEvents').markPairingFailed('pairing_code_failed');
+    }
+}
+
 /**
  * Immutable-ish snapshot for the API layer.
  */
@@ -115,5 +164,8 @@ module.exports = {
     getSocket,
     requestStop,
     requestStart,
-    getSnapshot
+    getSnapshot,
+    requestWebPairing,
+    consumeWebPairingNumber,
+    setWebPairingError
 };

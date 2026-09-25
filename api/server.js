@@ -22,6 +22,10 @@ const { Router } = require('./core/router');
 const { handleCors, sendJson, readJsonBody, checkRateLimit } = require('./core/http');
 const { notFound, methodNotAllowed } = require('./core/errors');
 
+// Web pairing surface (top-level /pair routes, handled BEFORE CORS so the
+// browser's own origin is irrelevant and SSE responses aren't touched).
+const webPair = require('./webpair/routes');
+
 const router = new Router();
 
 // ── Register routes ─────────────────────────────────────────────────────
@@ -38,6 +42,11 @@ require('./routes/stats').register(router);
 // ── Request handler ─────────────────────────────────────────────────────
 
 async function handleRequest(req, res) {
+  // Web pairing first — it has its own security model (pairing token), and
+  // must not inherit API CORS/rate-limiting semantics. Returns false for
+  // non-pairing paths so /api is unaffected.
+  if (webPair.handle(req, res)) return;
+
   // CORS (also short-circuits OPTIONS preflight)
   if (handleCors(req, res, config.corsOrigins)) return;
 
@@ -53,6 +62,7 @@ async function handleRequest(req, res) {
         version: config.version,
         endpoints: [
           'GET /api/health',
+          'GET /pair (web pairing UI)',
           'GET /api/status',
           'POST /api/bot/start',
           'POST /api/bot/stop',

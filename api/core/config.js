@@ -12,11 +12,13 @@ const apiConfig = {
   // Base path for every endpoint (e.g. http://localhost:3000/api/health)
   basePath: '/api',
 
-  // Port: respects Freebuff/host PORT, overridable with EDBOTS_API_PORT
+  // Port: cloud platforms (Render/Railway/Heroku) inject PORT and expect the
+  // app to bind to it; EDBOTS_API_PORT overrides for local setups.
   port: parseInt(process.env.EDBOTS_API_PORT || process.env.PORT || '3000', 10),
 
-  // Host binding: 0.0.0.0 so containers/platforms can reach it
-  host: process.env.EDBOTS_API_HOST || '0.0.0.0',
+  // Host binding: 0.0.0.0 so containers/platforms can reach it. HOST is the
+  // conventional platform override.
+  host: process.env.EDBOTS_API_HOST || process.env.HOST || '0.0.0.0',
 
   // Master key: full-access key. If unset, only keys stored in
   // data/apiKeys.json (created via api/createKey.js) work. Fail-closed.
