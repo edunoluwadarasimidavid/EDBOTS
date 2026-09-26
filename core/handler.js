@@ -35,6 +35,11 @@ const botState = require('./botState');
 /** Reconnect notice shown to users when a command hits a dead socket. */
 const RECONNECTING_MSG = '🔌 *Bot is reconnecting, please try again shortly.*';
 
+// Rate-limited logging: during a reconnect flap many queued messages can
+// arrive; logging every drop would spam the console.
+let lastStaleDropLogAt = 0;
+const STALE_DROP_LOG_INTERVAL_MS = 30000;
+
 // Group metadata cache
 const groupMetadataCache = new Map();
 const CACHE_TTL = 60000; // 1 minute
@@ -123,11 +128,17 @@ const handleMessage = async (sock, msg, commands) => {
         const from = msg.key.remoteJid;
         if (!msg.message || isSystemJid(from)) return;
 
-        // DEAD-SOCKET GATE: if the connection dropped between the event being
-        // queued and this handler running, replying would throw "Connection
-        // Closed". Fail silently — the user will resend after reconnect.
+        // STALE/CLOSED-SOCKET GATE: the caller (connection.js) has already
+        // verified the generation; this re-checks liveness at processing
+        // time. If the connection dropped between the event firing and this
+        // handler running, the message is skipped — never processed through
+        // a dead socket, never queued, never thrown out of.
         if (!botState.isSocketOpen(sock)) {
-            console.warn('[HANDLER] Dropped message from', from, '— socket is not open (reconnecting).');
+            const now = Date.now();
+            if (now - lastStaleDropLogAt >= STALE_DROP_LOG_INTERVAL_MS) {
+                lastStaleDropLogAt = now;
+                console.log(`[HANDLER] Ignoring message from stale/closed socket (from ${from}). Further identical messages will be dropped silently for a while.`);
+            }
             return;
         }
 

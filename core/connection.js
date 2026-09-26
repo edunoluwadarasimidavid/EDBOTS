@@ -1,6 +1,24 @@
 /**
  * @file connection.js
- * @description Hardened WhatsApp connection engine with auto-repair and session safety.
+ * @description Hardened WhatsApp connection engine with generation-based
+ * socket identity, single-flight reconnects, and session safety.
+ *
+ * Lifecycle guarantees:
+ * - Exactly ONE active Baileys socket per process (single-flight `connecting`
+ *   lock + cross-process session lockfile).
+ * - Every socket carries a generation (`__connGen`, owned by botState).
+ *   Event handlers verify the event belongs to the CURRENT generation before
+ *   doing any work — stale sockets can never process messages, send replies,
+ *   update presence, write credentials, or trigger reconnection.
+ * - Before a replacement socket is created, the old one is RETIRED: its
+ *   listeners are removed first, then the socket is ended — so no late event
+ *   from a dead socket can ever fire application handlers again.
+ * - Disconnect reasons come from the real Baileys DisconnectReason codes.
+ *   401/403 are permanent (stop, require re-pairing); everything else
+ *   (428/408/440/500/503/515…) reconnects with the existing session using
+ *   controlled exponential backoff — connectionReplaced (440) gets its own
+ *   escalation curve, restartRequired (515) reconnects fast.
+ * - Never process.exit() for connection problems: PM2 only handles crashes.
  */
 
 const {
@@ -27,6 +45,7 @@ const { handleAuthFailure, safeWriteAuth } = require('../utils/sessionManager');
 
 // Control-layer bridge (additive): lets the REST API observe status and
 // stop/start the bot without touching Baileys internals or message handling.
+// botState owns the authoritative socket generation.
 const botState = require('./botState');
 
 // Auth state/event hub: publishes REAL Baileys events (QR, pairing code,
@@ -47,20 +66,27 @@ function ensureApiServer() {
     }
 }
 
-// Global state
-let sock = null;             // current socket (also mirrored in botState)
-let reconnectAttempts = 0;
+// ── Connection manager state (the ONE authoritative copy) ────────────────
+let sock = null;             // current RAW socket (identity in botState)
+let reconnectAttempts = 0;   // consecutive reconnects without a stable open
 let commands = new Map();
+let connecting = false;      // single-flight lock (connect OR reconnect)
+let reconnectTimer = null;   // pending backoff timer (cancellable)
 
-// Single-flight reconnect guard: at most one reconnect pipeline may run at a
-// time. setConnecting prevents close-handler races where two connection.update
-// events (or an API start + a close event) each call connectToWhatsApp() and
-// spawn two sockets — the direct cause of connectionReplaced (440) loops.
-let connecting = false;
+// Connection generation of the socket being created (diagnostics/logging).
+let connectionGeneration = 0;
 
-// Pending reconnect timer — so a newer connect call can cancel a scheduled
-// reconnect (e.g. user hits POST /api/bot/start during backoff).
-let reconnectTimer = null;
+// When the current connection successfully opened (stability window).
+let currentConnectionStartedAt = 0;
+const STABLE_CONNECTION_MS = 10000;   // open for >=10s counts as stable
+
+// connectionReplaced (440) escalation tracking.
+let replacedCount = 0;
+let lastReplacedAt = 0;
+
+// Rate-limited stale-event logging (avoid console spam during flaps).
+let lastStaleEventLogAt = 0;
+const STALE_LOG_INTERVAL_MS = 30000;
 
 // Pairing-code state (reset per connection attempt)
 let pairingRequested = false;
@@ -71,6 +97,88 @@ const logger = pino({ level: 'silent' });
 
 // Session path
 const SESSION_DIR = path.join(__dirname, '..', config.sessionName || 'session');
+
+// Cross-process session lockfile: prevents two OS processes (e.g. PM2
+// instance + manual `node index.js`, or the CLI) from both opening the same
+// WhatsApp session — the #1 real-world cause of 440 connectionReplaced.
+const LOCK_FILE = path.join(SESSION_DIR, '.connection.lock');
+let exitHookRegistered = false;
+
+/**
+ * Try to acquire the session lock. Returns { ok, holder? }.
+ * A lock held by a DEAD pid is treated as stale and removed. Lock errors
+ * never block boot (the lock is a safety net, not a hard dependency).
+ */
+function acquireSessionLock() {
+    try {
+        fs.ensureDirSync(SESSION_DIR);
+        if (fs.existsSync(LOCK_FILE)) {
+            let info = null;
+            try { info = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8')); } catch { info = null; }
+            if (info && info.pid && info.pid !== process.pid) {
+                try {
+                    process.kill(info.pid, 0); // throws if the holder is dead
+                    return { ok: false, holder: info };
+                } catch { /* holder is gone — stale lock */ }
+            }
+            fs.removeSync(LOCK_FILE);
+        }
+        fs.writeJsonSync(LOCK_FILE, { pid: process.pid, startedAt: new Date().toISOString() });
+        return { ok: true };
+    } catch (err) {
+        return { ok: true, warn: err.message };
+    }
+}
+
+/** Release the session lock if we own it (sync — safe in 'exit' handler). */
+function releaseSessionLock() {
+    try {
+        if (fs.existsSync(LOCK_FILE)) {
+            let info = null;
+            try { info = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8')); } catch { info = null; }
+            if (!info || info.pid === process.pid) fs.removeSync(LOCK_FILE);
+        }
+    } catch { /* best effort */ }
+}
+
+/**
+ * Retire a socket: mark it stale, strip ALL its event listeners, then end
+ * it. Removing listeners BEFORE end() guarantees the close event cannot re-
+ * enter application handlers (the race behind duplicate reconnects).
+ */
+const retireSocket = (oldSock, cause) => {
+    if (!oldSock) return;
+    try {
+        oldSock.__stale = true;
+        if (oldSock.ev && typeof oldSock.ev.removeAllListeners === 'function') {
+            oldSock.ev.removeAllListeners();
+        }
+    } catch { /* emitter already gone */ }
+    try {
+        if (oldSock.ws && oldSock.ws.readyState === 1) {
+            oldSock.end(new Error(cause || 'Socket replaced by EDBOTS'));
+        }
+    } catch { /* already closed */ }
+    if (sock === oldSock) sock = null;
+    console.log(`\x1b[2m[CONNECTION] Retired socket generation ${oldSock.__connGen ?? 'n/a'} (${cause || 'replaced'}). listeners removed, socket closed\x1b[0m`);
+};
+
+/**
+ * Log a stale-socket event at most once per STALE_LOG_INTERVAL_MS.
+ */
+const logStaleEvent = (what, staleGen) => {
+    const now = Date.now();
+    if (now - lastStaleEventLogAt < STALE_LOG_INTERVAL_MS) return;
+    lastStaleEventLogAt = now;
+    console.log(`\x1b[33m[CONNECTION] Ignoring stale socket event (${what}) from generation ${staleGen ?? 'n/a'} — current generation is ${botState.getGeneration()}.\x1b[0m`);
+};
+
+/**
+ * Is this socket still the current, authoritative one?
+ */
+const isCurrentSocket = (thisSock) =>
+    thisSock && sock === thisSock && !thisSock.__stale &&
+    thisSock.__connGen === botState.getGeneration();
 
 /**
  * Interactive Question Helper
@@ -156,30 +264,48 @@ const showPairingCode = (code) => {
 };
 
 /**
- * Schedule exactly ONE reconnect attempt after an exponential backoff.
+ * Schedule exactly ONE reconnect attempt after a controlled backoff.
  *
- * - The pending timer is stored globally so a newer connect request (e.g.
- *   POST /api/bot/start) can cancel it.
- * - connectToWhatsApp() re-acquires the single-flight lock on entry, so the
+ * - Single-flight: the timer is stored globally; a newer connect request
+ *   cancels it. connectToWhatsApp() re-acquires the lock on entry, so the
  *   scheduled attempt can never race another one.
- * - Never gives up and never exits the process: PM2 only needs to handle real
- *   crashes; WhatsApp recovery is this module's job.
+ * - restartRequired (515): fast 2s reconnect (WhatsApp asked for it).
+ * - connectionReplaced (440): separate escalation curve (5s→60s) with a
+ *   clear diagnostic that a competing client/process is the likely cause.
+ * - Everything else: exponential 1s→30s. The attempt counter is reset by
+ *   the close handler after a STABLE connection, so repeated network blips
+ *   escalate but a healthy session always restarts the curve at 1s.
+ * - Never gives up and never exits the process: PM2 only handles crashes.
  */
-const scheduleReconnect = (statusCode, reasonName, error) => {
+const scheduleReconnect = (statusCode, reasonName) => {
     reconnectAttempts++;
 
-    // restartRequired (515) is WhatsApp itself asking for a quick reconnect —
-    // keep that one fast instead of backing off.
-    const delayMs = statusCode === DisconnectReason.restartRequired
-        ? 2000
-        : Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
+    let delayMs;
+    if (statusCode === DisconnectReason.restartRequired) {
+        // WhatsApp itself asked for an immediate reconnect with the SAME
+        // session — keep it quick, it is not a failure loop.
+        delayMs = 2000;
+    } else if (statusCode === DisconnectReason.connectionReplaced) {
+        // Escalating backoff for 440 conflicts (5s, 10s, 20s, 40s, 60s…).
+        replacedCount++;
+        delayMs = Math.min(5000 * Math.pow(2, replacedCount - 1), 60000);
+        if (replacedCount === 1) {
+            console.warn('\x1b[33m[CONNECTION] connectionReplaced (440): another client/session took over this WhatsApp session.\x1b[0m');
+            console.warn('\x1b[33m  Usual causes: a second EDBOTS process (PM2 instance + manual start / CLI / another server),\x1b[0m');
+            console.warn('\x1b[33m  or the same number linked elsewhere. EDBOTS itself only ever creates ONE socket.\x1b[0m');
+        } else if (replacedCount >= 3) {
+            console.warn(`\x1b[33m[CONNECTION] Repeated 440 conflicts (${replacedCount}). Check: pm2 ls for duplicate instances, another host using this session, or Linked Devices on the phone.\x1b[0m`);
+        }
+    } else {
+        delayMs = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
+    }
 
     console.warn(`  willReconnect : true (temporary failure)`);
     console.warn(`  nextRetryIn   : ${Math.round(delayMs / 1000)}s`);
     if (reconnectAttempts % 10 === 0) {
         console.log('\x1b[36m[CONNECTION] Still retrying — check network/DNS. Tip: edbots doctor\x1b[0m');
     }
-    void reasonName; void error; // already logged by the caller
+    void reasonName; // already logged by the caller
 
     // The current pipeline ends here; release the single-flight lock so the
     // scheduled attempt may run (it re-acquires the lock on entry).
@@ -191,20 +317,27 @@ const scheduleReconnect = (statusCode, reasonName, error) => {
         connectToWhatsApp().catch((err) => {
             console.error('[CONNECTION] Reconnect attempt error:', err && err.message ? err.message : err);
             connecting = false;
-            scheduleReconnect(null, 'reconnect_error', err);
+            scheduleReconnect(null, 'reconnect_error');
         });
     }, delayMs);
 };
 
 /**
- * Main Connection Function
+ * Main Connection Function — the single authoritative connection manager.
+ * Boot (index.js), the CLI, and POST /api/bot/start all funnel through here;
+ * the single-flight lock and generation system make duplicates impossible.
  */
 const connectToWhatsApp = async () => {
     // Single-flight guard: never allow two connect pipelines (boot, API
-    // start, scheduled reconnect) to run concurrently — that is how duplicate
-    // sockets and connectionReplaced (440) loops happened.
+    // start, scheduled reconnect) to run concurrently.
     if (connecting) {
         console.log('\x1b[33m[CONNECTION] Connect already in progress — duplicate request ignored.\x1b[0m');
+        return sock;
+    }
+
+    // API-requested stop: do not create sockets while stopped.
+    if (botState.isStopped()) {
+        console.log('\x1b[33m[CONNECTION] Bot is stopped via API — connect suppressed.\x1b[0m');
         return sock;
     }
     connecting = true;
@@ -226,6 +359,26 @@ const connectToWhatsApp = async () => {
         console.error('\x1b[33m[SYSTEM] Self-repair skipped (non-fatal):\x1b[0m', err && err.message ? err.message : err);
     }
 
+    // 1.5 Cross-process session lock: another OS process holding this
+    //     session would cause 440 connectionReplaced wars. Refuse to add a
+    //     second connection instead of fighting over the session.
+    const lock = acquireSessionLock();
+    if (!lock.ok) {
+        connecting = false;
+        console.error('\x1b[31m[CONNECTION] Another EDBOTS process already owns this WhatsApp session.\x1b[0m');
+        console.error(`\x1b[31m  Holder pid: ${lock.holder.pid}, started: ${lock.holder.startedAt}\x1b[0m`);
+        console.error('\x1b[31m  Running two bots on one session causes 440 connectionReplaced conflicts.\x1b[0m');
+        console.error('\x1b[31m  Stop the other process first (pm2 ls / edbots restart), then start this one.\x1b[0m');
+        return null;
+    }
+    if (lock.warn) {
+        console.warn(`\x1b[33m[CONNECTION] Session lock unavailable (${lock.warn}) — continuing without cross-process guard.\x1b[0m`);
+    }
+    if (!exitHookRegistered) {
+        exitHookRegistered = true;
+        process.on('exit', releaseSessionLock);
+    }
+
     // 2. Ensure session directory exists
     await fs.ensureDir(SESSION_DIR);
 
@@ -236,7 +389,7 @@ const connectToWhatsApp = async () => {
         state = (await useMultiFileAuthState(SESSION_DIR)).state;
     } catch (err) {
         console.error('\x1b[31m[CONNECTION] Failed to load auth state:\x1b[0m', err && err.message ? err.message : err);
-        scheduleReconnect(null, 'auth_state_error', err);
+        scheduleReconnect(null, 'auth_state_error');
         return null;
     }
 
@@ -247,7 +400,7 @@ const connectToWhatsApp = async () => {
     try {
         ({ version, isLatest } = await fetchLatestBaileysVersion());
     } catch { /* Baileys default version is used */ }
-    
+
     console.log(`\x1b[36m[SYSTEM] Using Baileys v${version.join('.')} (Latest: ${isLatest})\x1b[0m`);
 
     // 4. Load Commands once
@@ -315,14 +468,14 @@ const connectToWhatsApp = async () => {
             console.log('\n\x1b[1m\x1b[33mSelect Authentication Method:\x1b[0m');
             console.log('1. QR Code (Default)');
             console.log('2. Pairing Code (Phone Number)');
-            
+
             const choice = await question('Enter choice [1/2]: ');
-            
+
             if (choice === '2') {
                 usePairingCode = true;
                 phoneNumber = await question('Enter your phone number (e.g., 2348012345678): ');
                 phoneNumber = phoneNumber.replace(/[^0-9]/g, '');
-                
+
                 if (!phoneNumber) {
                     console.log('\x1b[31m[ERROR] Invalid phone number. Defaulting to QR Code.\x1b[0m');
                     usePairingCode = false;
@@ -335,7 +488,15 @@ const connectToWhatsApp = async () => {
     pairingRequested = false;
     pairingFailed = false;
 
-    // 6. Socket Configuration
+    // 6. RETIRE the old socket BEFORE creating the replacement: strip its
+    //    listeners (so its late close cannot re-enter our handlers), end it,
+    //    and invalidate its identity via the new generation below.
+    retireSocket(sock, 'replaced by new connection');
+
+    connectionGeneration = botState.getGeneration() + 1;
+    console.log(`[CONNECTION] Creating socket generation ${connectionGeneration}...`);
+
+    // 7. Socket Configuration
     sock = makeWASocket({
         version,
         logger,
@@ -353,17 +514,19 @@ const connectToWhatsApp = async () => {
         retryRequestDelayMs: 2000,
     });
 
-    // Capture THIS attempt's socket. Handlers below close over it, so a late
-    // event from an old socket can never mutate the new connection's state.
+    // Capture THIS attempt's socket. Handlers below close over it and verify
+    // the generation before doing anything — a stale socket's events can
+    // never process messages, reply, update presence, or reconnect.
     const thisSock = sock;
 
-    // Register with the control layer immediately so web pairing (/pair
-    // request-code) can see the socket while it is still connecting.
+    // Register with the control layer: assigns THIS socket its generation
+    // (== connectionGeneration) and hands out a guarded proxy to consumers.
+    // Registering also immediately invalidates every previous socket.
     if (sock === thisSock) botState.setSocket(thisSock);
 
-    // 7. Connection Logic — one listener per socket attempt. The async body
+    // 8. Connection Logic — one listener per socket attempt. The async body
     // is isolated in handleConnectionUpdate with an explicit .catch(), so a
-    // throw can never surface as an unhandled rejection (it used to).
+    // throw can never surface as an unhandled rejection.
     thisSock.ev.on('connection.update', (update) => {
         handleConnectionUpdate(update).catch((err) => {
             console.error('\x1b[31m[CONNECTION] connection.update handler error:\x1b[0m', err && err.message ? err.message : err);
@@ -373,10 +536,12 @@ const connectToWhatsApp = async () => {
     async function handleConnectionUpdate(update) {
         const { connection, lastDisconnect, qr } = update;
 
-        // Expose the live socket to the control layer — but only while it is
-        // still the current socket. A stale socket's events must never
-        // overwrite a newer connection's state.
-        if (sock === thisSock) botState.setSocket(thisSock);
+        // STALE-SOCKET GUARD (generation check). An old socket's events must
+        // not touch the connection state, auth UI, or reconnection logic.
+        if (!isCurrentSocket(thisSock)) {
+            logStaleEvent('connection.update', thisSock.__connGen);
+            return;
+        }
 
         // ── Authentication ─────────────────────────────────────
         // The `qr` event fires only when the WebSocket is connected and
@@ -384,10 +549,6 @@ const connectToWhatsApp = async () => {
         // Requesting it earlier races against the socket handshake and
         // fails silently, which is why the code never showed before.
         if (qr) {
-            // Ignore QR events from a stale socket (e.g. an event that arrived
-            // late, after a reconnect already replaced this attempt).
-            if (sock !== thisSock) return;
-
             // Publish every QR WhatsApp issues to the web UI (SSE). It is
             // rendered to a PNG data-URL — the raw QR string stays on the
             // server and never crosses the wire.
@@ -436,11 +597,14 @@ const connectToWhatsApp = async () => {
 
         // ── Closed / reconnect ─────────────────────────────────
         if (connection === 'close') {
-            // A stale socket closing must not trigger reconnection logic for
-            // the current connection (this is what used to double-connect).
-            if (sock !== thisSock) return;
             const error = lastDisconnect?.error;
-            const statusCode = new Boom(error)?.output?.statusCode;
+            // Baileys raises @hapi/boom errors: read the code straight from
+            // the error's own output first; re-wrapping stays as a fallback
+            // for plain Errors carrying { statusCode }. Never guess by
+            // string matching.
+            const statusCode =
+                (error && error.output && error.output.statusCode) ??
+                new Boom(error)?.output?.statusCode;
             const reasonName =
                 Object.keys(DisconnectReason).find((k) => DisconnectReason[k] === statusCode) ||
                 (error && error.output && error.output.payload && error.output.payload.error) ||
@@ -455,9 +619,9 @@ const connectToWhatsApp = async () => {
                 statusCode === DisconnectReason.loggedOut ||
                 statusCode === DisconnectReason.forbidden;
 
-            // Mark this socket unavailable IMMEDIATELY. Commands, presence
-            // updates and API consumers consult botState — from this moment
-            // they fail fast instead of firing requests into a dead socket.
+            // Mark this socket unavailable IMMEDIATELY. Consumers (handler,
+            // anti-ban, API) consult botState — from this moment they fail
+            // fast instead of firing requests into a dead socket.
             if (sock === thisSock) botState.clearSocket(thisSock);
             botState.setStatus('offline', {
                 reason: reasonName !== 'unknown' ? reasonName : (error?.message || 'connection_closed')
@@ -472,15 +636,27 @@ const connectToWhatsApp = async () => {
                 authEvents.setState('FAILED', { reason: (error && error.message) || 'connection_closed' });
             }
 
-            // API-requested stop: do NOT reconnect (session stays intact)
+            // API-requested stop: do NOT reconnect (session stays intact).
+            // Retire the socket so no listener can fire afterwards.
             if (botState.isStopped()) {
                 console.log('\x1b[33m[CONNECTION] Stopped via API. Reconnect suppressed.\x1b[0m');
+                retireSocket(thisSock, 'stopped via API');
                 connecting = false;
                 return;
             }
 
+            // A connection that stayed open for >= STABLE_CONNECTION_MS was
+            // healthy: restart the backoff curves from the beginning.
+            const wasStable = currentConnectionStartedAt > 0 &&
+                (Date.now() - currentConnectionStartedAt) >= STABLE_CONNECTION_MS;
+            if (wasStable) {
+                reconnectAttempts = 0;
+                replacedCount = 0;
+            }
+
             // Detailed, honest diagnostics for every disconnect.
             console.warn('\x1b[33m[CONNECTION] Socket closed.\x1b[0m');
+            console.warn(`  generation    : ${thisSock.__connGen ?? 'n/a'}`);
             console.warn(`  state         : ${botState.getSnapshot().status}`);
             console.warn(`  statusCode    : ${statusCode !== undefined && statusCode !== null ? statusCode : 'n/a'}`);
             console.warn(`  reason        : ${reasonName}${error && error.message ? ` (${error.message})` : ''}`);
@@ -492,6 +668,7 @@ const connectToWhatsApp = async () => {
                 // reconnect loop (no process.exit — PM2 is for real crashes).
                 reconnectAttempts = 0;
                 connecting = false;
+                retireSocket(thisSock, 'logged out');
                 console.error('\x1b[31m[CONNECTION] Session logged out / rejected by WhatsApp (re-pairing required).\x1b[0m');
                 console.log('\x1b[36m[CONNECTION] Open the Web Authentication URL (/pair) or run: edbots pair\x1b[0m');
 
@@ -518,30 +695,38 @@ const connectToWhatsApp = async () => {
 
             // Temporary failure → schedule ONE controlled reconnect with
             // exponential backoff (single-flight, same session, no QR).
-            scheduleReconnect(statusCode, reasonName, error);
+            // Retire the dead socket FIRST: mark stale, strip its listeners
+            // and drop the reference, so a duplicated/late close event from
+            // this socket can never schedule a second reconnect.
+            retireSocket(thisSock, reasonName);
+            scheduleReconnect(statusCode, reasonName);
             return;
         }
 
         // ── Open ───────────────────────────────────────────────
         if (connection === 'open') {
-            // Connected: cancel any pending reconnect, reset attempts, and
-            // release the single-flight lock.
+            // Connected: cancel any pending reconnect, mark the connection
+            // start (stability window), release the single-flight lock.
             if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-            reconnectAttempts = 0;
+            currentConnectionStartedAt = Date.now();
             connecting = false;
 
             // Race guard: the API may have requested a stop while we were
             // connecting. Honor it instead of flapping back online.
             if (botState.isStopped()) {
                 console.log('\x1b[33m[CONNECTION] Connected, but a stop was requested — closing socket.\x1b[0m');
-                try { thisSock.end(new Error('Stopped by EDBOTS API')); } catch { /* already closed */ }
+                retireSocket(thisSock, 'stopped via API');
+                botState.setStatus('offline', { reason: 'stopped_by_api' });
                 return;
             }
 
             console.log('\n\x1b[1m\x1b[32m[SUCCESS] EDBots Connected Successfully!\x1b[0m');
-            console.log(`\x1b[36m[INFO] User: ${thisSock.user?.name || 'Bot'} (${thisSock.user?.id?.split(':')[0] || 'unknown'})\x1b[0m\n`);
+            console.log(`\x1b[36m[INFO] User: ${thisSock.user?.name || 'Bot'} (${thisSock.user?.id?.split(':')[0] || 'unknown'})  [generation ${thisSock.__connGen ?? 'n/a'}]\x1b[0m\n`);
 
-            // Expose the live socket + status to the control layer
+            // Expose the live socket + status to the control layer. Only NOW
+            // is message handling allowed: botState.isSocketOpen() requires
+            // status 'online', which is set here — messages arriving before
+            // this point are dropped as stale, never processed.
             botState.setSocket(thisSock);
             botState.setStatus('online');
 
@@ -552,9 +737,13 @@ const connectToWhatsApp = async () => {
         }
     }
 
-    // 8. Credential Saving - Patched for atomic safety (guarded: a failed
-    //    write during a disconnect must never become an unhandled rejection)
+    // 9. Credential Saving — generation-gated: a stale socket must NEVER
+    //    write outdated credentials over the current session's files.
     thisSock.ev.on('creds.update', async () => {
+        if (!isCurrentSocket(thisSock)) {
+            logStaleEvent('creds.update', thisSock.__connGen);
+            return;
+        }
         try {
             await safeWriteAuth(path.join(SESSION_DIR, 'creds.json'), thisSock.authState.creds);
         } catch (err) {
@@ -562,16 +751,26 @@ const connectToWhatsApp = async () => {
         }
     });
 
-    // 9. Message Handling (fully wrapped: event-handler throws would
-    //    otherwise surface as unhandled rejections in Baileys' EventEmitter)
+    // 10. Message Handling — generation + liveness gated. Messages arriving
+    //     from a stale socket, while reconnecting, or before 'open' are
+    //     dropped (rate-limited log), never processed and never queued.
     thisSock.ev.on('messages.upsert', async (chatUpdate) => {
         try {
+            if (!isCurrentSocket(thisSock) || !botState.isSocketOpen(thisSock)) {
+                logStaleEvent('message', thisSock.__connGen);
+                console.log('\x1b[2m[HANDLER] Ignoring message from stale/closed socket.\x1b[0m');
+                return;
+            }
+
             if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
             const msg = chatUpdate.messages[0];
             if (!msg.message) return;
             if (msg.key.remoteJid === 'status@broadcast') return;
 
-            await handleMessage(thisSock, msg, commands);
+            // Hand the handler a GUARDED proxy: every send/presence call it
+            // makes re-verifies liveness at call time and fails fast with a
+            // catchable error if the connection died mid-processing.
+            await handleMessage(botState.getSocket(), msg, commands);
 
         } catch (err) {
             console.error('\x1b[31m[HANDLER ERROR]\x1b[0m', err);

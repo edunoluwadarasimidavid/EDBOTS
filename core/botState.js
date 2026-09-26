@@ -1,21 +1,40 @@
 /**
  * @file botState.js
  * @description Runtime bridge between the WhatsApp connection engine and the
- * REST API control layer.
+ * REST API control layer. Owns the authoritative socket identity.
  *
  * Design rules:
  * - Purely observational/control: it NEVER touches Baileys internals,
  *   session files, or message handling.
- * - connection.js reports lifecycle events here (additive, ~6 lines).
+ * - connection.js reports lifecycle events here (additive).
  * - The API reads the snapshot and may request start/stop.
  *
+ * Socket identity ("generation"): every socket registered via setSocket()
+ * gets a monotonically increasing generation number, stamped onto the raw
+ * socket as __connGen. Consumers that captured an older socket (handler,
+ * commands, presence simulation, API) can be told apart from the current
+ * one by that number, so a stale socket can never:
+ *   - process messages,  - update presence,  - send replies,
+ *   - write credentials, - overwrite the current reference, or
+ *   - trigger a reconnect.
+ *
+ * Guarded socket: getSocket()/setSocket() hand out a Proxy around the raw
+ * Baileys socket. Network operations invoked through the proxy fail FAST
+ * with a clean, catchable "Connection Closed" error when that socket is
+ * stale or not open — instead of hanging on / throwing out of a dead
+ * WebSocket. Non-network properties (ev, ws, user, authState…) pass
+ * through unchanged.
+ *
  * "stop" semantics: we mark stopped=true and end the socket. connection.js
- * checks this flag in its close handler and deliberately does NOT reconnect,
- * which is the cleanest way to stop without touching the reconnect logic.
+ * checks this flag in its close handler and deliberately does NOT reconnect.
  */
 
 const state = {
     status: 'offline', // offline | connecting | online
+
+    // Authoritative socket generation. Incremented on every setSocket() of a
+    // NEW socket. Anything whose __connGen differs is stale by definition.
+    generation: 0,
 
     // Web pairing: when the browser asks for a pairing code, this holds the
     // phone number until the next QR event, when connection.js calls
@@ -29,7 +48,7 @@ const state = {
     lastDisconnectReason: null,
     lastError: null,
     user: null, // { id, name } when online
-    sock: null
+    sock: null  // RAW socket (proxies are handed out by getSocket())
 };
 
 function setStatus(status, details = {}) {
@@ -47,66 +66,161 @@ function setStatus(status, details = {}) {
     }
 }
 
+// ── Socket identity + guarded proxy ─────────────────────────────────────
+
+/** Accepts a raw socket or a guarded proxy; returns the raw socket. */
+function unwrapSock(s) {
+    if (!s) return null;
+    return s.__rawSock || s;
+}
+
+/**
+ * Methods that touch the WhatsApp network. When invoked through the guarded
+ * proxy on a stale/closed socket, they reject immediately with a clean
+ * error instead of hanging or throwing from a dead WebSocket.
+ */
+const NETWORK_METHODS = new Set([
+    'sendMessage', 'relayMessage', 'sendPresenceUpdate', 'readMessages',
+    'presenceSubscribe', 'chatModify', 'groupMetadata', 'groupInviteCode',
+    'groupToggleEphemeral', 'groupSettingUpdate', 'groupParticipantsUpdate',
+    'groupLeave', 'profilePictureUrl', 'requestPairingCode',
+    'newsletterFetchMessages', 'newsletterUpdateMetadata', 'storyRead',
+    'fetchBusinessProfile', 'updateProfilePicture', 'updateProfileStatus',
+    'updateProfileName', 'blockUser', 'updateBlockStatus'
+]);
+
+/**
+ * Wrap a raw socket in a guarded proxy. The proxy is memoized on the raw
+ * socket (__guarded) so identity stays stable across getSocket() calls.
+ */
+function makeGuardedSocket(raw) {
+    if (raw.__guarded) return raw.__guarded;
+
+    const wrappedCache = new Map();
+
+    const proxy = new Proxy(raw, {
+        get(target, prop) {
+            if (prop === '__rawSock') return target;
+            if (prop === '__connGen') return target.__connGen;
+
+            const value = Reflect.get(target, prop, target);
+
+            if (NETWORK_METHODS.has(prop) && typeof value === 'function') {
+                if (!wrappedCache.has(prop)) {
+                    wrappedCache.set(prop, function guardedNetworkMethod(...args) {
+                        if (!isSocketOpen(raw)) {
+                            const err = new Error('Connection Closed');
+                            err.isStaleSocket = true;
+                            console.warn(
+                                `[SOCKET] ${String(prop)}() blocked — socket generation ` +
+                                `${raw.__connGen} is stale or not open (status: ${state.status}).`
+                            );
+                            return Promise.reject(err);
+                        }
+                        return value.apply(target, args);
+                    });
+                }
+                return wrappedCache.get(prop);
+            }
+
+            // Other functions: bind to the RAW socket so `this` is correct.
+            if (typeof value === 'function') return value.bind(target);
+            return value;
+        }
+    });
+
+    raw.__guarded = proxy;
+    return proxy;
+}
+
+/**
+ * Register a socket as the current one. Assigns a NEW generation number to
+ * every new socket (invalidating all previous ones). Calling it again with
+ * the SAME socket (e.g. on connection 'open') only refreshes the identity.
+ * Returns the guarded proxy for the socket.
+ */
 function setSocket(sock) {
-    state.sock = sock || null;
-    if (sock && sock.user) {
-        state.user = {
-            id: sock.user.id || null,
-            name: sock.user.name || null
-        };
+    const raw = unwrapSock(sock);
+    if (!raw) {
+        state.sock = null;
+        return null;
     }
+
+    if (state.sock === raw) {
+        // Same socket re-registered: refresh identity only, do NOT bump.
+        if (raw.user) {
+            state.user = { id: raw.user.id || null, name: raw.user.name || null };
+        }
+        return makeGuardedSocket(raw);
+    }
+
+    state.generation++;
+    raw.__connGen = state.generation;
+    state.sock = raw;
+    state.user = raw.user
+        ? { id: raw.user.id || null, name: raw.user.name || null }
+        : null;
+    return makeGuardedSocket(raw);
 }
 
 function isStopped() {
     return state.stoppedByApi;
 }
 
+/** Current generation number (diagnostics / stale-event logging). */
+function getGeneration() {
+    return state.generation;
+}
+
 /**
- * True only when the registered socket is actually usable: the WebSocket is
- * OPEN and the session is authenticated (Baileys sets sock.user on open).
- * Both checks are required because sendMessage() on a closing-but-open
- * socket is exactly how "Connection Closed" errors reach users.
- *
- * This is the single source of truth for "can I use this socket right
- * now?" — the handler, anti-ban presence simulation, and any other caller
- * must consult it instead of trusting stale references.
+ * True only when the given (or the registered) socket is genuinely usable:
+ * it is the CURRENT generation, the WebSocket is OPEN and the session is
+ * authenticated (Baileys sets sock.user on open). Accepts a raw socket or
+ * a guarded proxy. This is the single source of truth for "can I use this
+ * socket right now?" — the handler, anti-ban simulation, and any other
+ * caller must consult it instead of trusting stale references.
  */
 function isSocketOpen(candidateSock = null) {
-    const s = candidateSock || state.sock;
+    const raw = unwrapSock(candidateSock) || state.sock;
+    if (!raw) return false;
+    if (raw.__connGen !== state.generation) return false; // stale identity
     return !!(
-        s &&
         state.status === 'online' &&
-        s.user &&
-        s.ws &&
-        s.ws.readyState === 1 // WebSocket.OPEN
+        raw.user &&
+        raw.ws &&
+        raw.ws.readyState === 1 // WebSocket.OPEN
     );
 }
 
 /**
- * Live socket reference (or null). Read-only consumers only (e.g. the API's
- * group listing). Callers must NOT reconfigure or send messages casually.
+ * Live socket as a guarded proxy (or null). Network calls through it fail
+ * fast when the socket is stale/closed. Read-only consumers (e.g. the API's
+ * group listing) also pass through unchanged properties like `user`.
  */
 function getSocket() {
-    return state.sock;
+    return state.sock ? makeGuardedSocket(state.sock) : null;
 }
 
 /**
- * The current active socket, but ONLY if it is genuinely usable. Returns
- * null when the connection is down/reconnecting, so callers can distinguish
- * "no socket" from "stale socket" and fail gracefully instead of firing a
- * doomed request at a dead WebSocket.
+ * The current active socket proxy, but ONLY if it is genuinely usable.
+ * Returns null when the connection is down/reconnecting, so callers can
+ * distinguish "no socket" from "stale socket" and fail gracefully instead
+ * of firing a doomed request at a dead WebSocket.
  */
 function getActiveSocket() {
-    return isSocketOpen() ? state.sock : null;
+    return isSocketOpen() ? getSocket() : null;
 }
 
 /**
- * Drop the socket reference (on close/replace). Handlers keep their own
- * captured sock for the current message, but anything that resolves the
- * socket lazily will immediately see null after this.
+ * Drop the socket reference (on close/replace). Accepts a raw socket or a
+ * guarded proxy; only clears when it matches the CURRENT socket (a stale
+ * caller can never clear a newer connection's registration). The caller's
+ * old socket stays stale forever because setSocket() bumped the generation
+ * when the replacement was registered.
  */
 function clearSocket(staleSock) {
-    if (!staleSock || state.sock === staleSock) {
+    const stale = unwrapSock(staleSock);
+    if (!stale || state.sock === stale) {
         state.sock = null;
     }
 }
@@ -208,6 +322,7 @@ function setWebPairingError(message) {
 function getSnapshot() {
     return {
         status: state.status,
+        connectionGeneration: state.generation,
         stoppedByApi: state.stoppedByApi,
         startedAt: new Date(state.startedAt).toISOString(),
         lastConnectedAt: state.lastConnectedAt
@@ -225,6 +340,7 @@ module.exports = {
     setStatus,
     setSocket,
     isStopped,
+    getGeneration,
     getSocket,
     getActiveSocket,
     isSocketOpen,
