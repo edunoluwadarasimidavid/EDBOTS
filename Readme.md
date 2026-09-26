@@ -88,7 +88,11 @@ Scopes: `read`, `write`, and optionally `admin`.
 
 ## 🌐 REST API
 
-Full endpoint documentation lives in **[docs/API.md](docs/API.md)**. Summary:
+Full endpoint documentation lives in **[docs/API.md](docs/API.md)** — the
+complete reference for building the external EDBOTS App: every endpoint with
+real request/response shapes, authentication & scopes, the full error catalog,
+rate limits, CORS setup, the web-pairing/SSE auth flow, a ready-made typed
+client, and TypeScript response types. Summary:
 
 | Endpoint | Method | Auth |
 |---|---|---|
