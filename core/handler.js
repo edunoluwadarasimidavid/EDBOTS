@@ -27,19 +27,6 @@ const advancedAntiBan = require('../utils/advancedAntiBan');
 const commandToggles = require('../utils/commandToggles');
 const runtimeFlags = require('../utils/runtimeFlags');
 
-// Connection-health gate: every WhatsApp operation must consult this before
-// touching the socket, so a closing/closed connection fails fast and cleanly
-// instead of throwing "Connection Closed" out of random async callbacks.
-const botState = require('./botState');
-
-/** Reconnect notice shown to users when a command hits a dead socket. */
-const RECONNECTING_MSG = '🔌 *Bot is reconnecting, please try again shortly.*';
-
-// Rate-limited logging: during a reconnect flap many queued messages can
-// arrive; logging every drop would spam the console.
-let lastStaleDropLogAt = 0;
-const STALE_DROP_LOG_INTERVAL_MS = 30000;
-
 // Group metadata cache
 const groupMetadataCache = new Map();
 const CACHE_TTL = 60000; // 1 minute
@@ -89,9 +76,9 @@ const isOwner = (sock, senderRaw, fromMe = false) => {
     
     const sender = normalizeNumber(senderRaw);
     const owner = normalizeNumber(config.owner[0] || "");
-    const botNumber = normalizeNumber(sock.user?.id?.split(':')[0] || '');
+    const botNumber = normalizeNumber(sock.user.id.split(':')[0]);
     
-    return (owner !== '' && sender === owner) || (botNumber !== '' && sender === botNumber);
+    return (owner !== '' && sender === owner) || sender === botNumber;
 };
 
 /**
@@ -115,8 +102,7 @@ const isAdmin = async (sock, sender, groupId, metadata) => {
  */
 const isBotAdmin = async (sock, groupId, metadata) => {
     if (!metadata) return false;
-    const botJid = (sock.user?.id?.split(':')[0] || '') + '@s.whatsapp.net';
-    if (!botJid.startsWith('@')) return false; // socket identity unavailable
+    const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
     return metadata.participants.some(p => p.id === botJid && p.admin !== null);
 };
 
@@ -127,20 +113,6 @@ const handleMessage = async (sock, msg, commands) => {
     try {
         const from = msg.key.remoteJid;
         if (!msg.message || isSystemJid(from)) return;
-
-        // STALE/CLOSED-SOCKET GATE: the caller (connection.js) has already
-        // verified the generation; this re-checks liveness at processing
-        // time. If the connection dropped between the event firing and this
-        // handler running, the message is skipped — never processed through
-        // a dead socket, never queued, never thrown out of.
-        if (!botState.isSocketOpen(sock)) {
-            const now = Date.now();
-            if (now - lastStaleDropLogAt >= STALE_DROP_LOG_INTERVAL_MS) {
-                lastStaleDropLogAt = now;
-                console.log(`[HANDLER] Ignoring message from stale/closed socket (from ${from}). Further identical messages will be dropped silently for a while.`);
-            }
-            return;
-        }
 
         const content = getMessageContent(msg);
         if (!content) return;
@@ -229,25 +201,8 @@ const handleMessage = async (sock, msg, commands) => {
             prefix,
             args,
             reply: async (text) => {
-                try {
-                    // Re-check at send time: long commands (AI, downloads,
-                    // media) can outlive the connection.
-                    if (!botState.isSocketOpen(sock)) {
-                        console.warn('[HANDLER] Reply skipped — socket closed before send.');
-                        return null;
-                    }
-                    await antiBan.simulateHumanBehavior(sock, from, text);
-                    return await sock.sendMessage(from, { text }, { quoted: msg });
-                } catch (err) {
-                    // Never let a reply become an unhandled rejection: log it
-                    // and, when it is a connection drop, tell the user once.
-                    if (botState.isConnectionError(err)) {
-                        console.warn('[HANDLER] Reply failed — connection closed (bot is reconnecting).');
-                        return null;
-                    }
-                    console.error('[HANDLER] Reply failed:', err && err.message ? err.message : err);
-                    return null;
-                }
+                await antiBan.simulateHumanBehavior(sock, from, text);
+                return sock.sendMessage(from, { text }, { quoted: msg });
             }
         };
 
@@ -323,15 +278,8 @@ const handleMessage = async (sock, msg, commands) => {
                     
                     console.log(`[SYSTEM] Command success: ${commandName}`);
                 } catch (cmdError) {
-                    // Graceful degradation: a disconnect mid-command is
-                    // expected and MUST NOT surface as an unhandled rejection.
-                    if (botState.isConnectionError(cmdError)) {
-                        console.warn(`[COMMAND] ${commandName} aborted — connection closed (bot is reconnecting).`);
-                        await context.reply(RECONNECTING_MSG);
-                        return;
-                    }
                     console.error(`[COMMAND FAILED] ${commandName}:`, cmdError);
-                    await context.reply('❌ An internal error occurred while executing this command.');
+                    context.reply('❌ An internal error occurred while executing this command.');
                 }
                 return;
             } else {

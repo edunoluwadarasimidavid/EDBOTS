@@ -5,7 +5,6 @@
  */
 
 const config = require('../config');
-const botState = require('../core/botState');
 
 // Dynamic delay that mimics human typing patterns
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -83,15 +82,6 @@ class HighGradeAntiBan {
      */
     async simulateHumanBehavior(sock, jid, responseText = '') {
         try {
-            // CONNECTION-AWARE: never touch a socket that is not genuinely
-            // open. This is the fix for the repeating
-            // "[ANTI-BAN] Presence update error: Connection Closed" spam:
-            // those errors fired while the bot was down/reconnecting.
-            if (!botState.isSocketOpen(sock)) {
-                console.warn('[ANTI-BAN] Presence update skipped — socket is not open.');
-                return;
-            }
-
             const charCount = (responseText || '').length || 20;
 
             // Simulate human typing speed: ~60-120 WPM → ~3-6 chars/sec
@@ -107,13 +97,6 @@ class HighGradeAntiBan {
             // Show "typing..." while composing
             await sock.sendPresenceUpdate('composing', jid);
             await delay(finalDelay);
-
-            // Re-check after the delay: the connection may have dropped
-            // mid-typing (the exact window where the old code errored).
-            if (!botState.isSocketOpen(sock)) {
-                console.warn('[ANTI-BAN] Presence update aborted mid-typing — socket closed.');
-                return;
-            }
             await sock.sendPresenceUpdate('paused', jid);
 
             // Update last response time

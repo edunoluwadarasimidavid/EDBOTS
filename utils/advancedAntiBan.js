@@ -14,7 +14,6 @@
  */
 
 const config = require('../config');
-const botState = require('../core/botState');
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -149,15 +148,6 @@ class AdvancedAntiBan {
      */
     async simulateHumanBehavior(sock, jid, responseText = '') {
         try {
-            // CONNECTION-AWARE: skip entirely when the socket is not open.
-            // Presence calls on a dead socket used to increment
-            // consecutiveErrors and eventually trip the circuit breaker,
-            // blocking ALL responses after a disconnect/reconnect cycle.
-            if (!botState.isSocketOpen(sock)) {
-                console.warn('[AntiBan] Presence simulation skipped — socket is not open.');
-                return;
-            }
-
             const state = this.getUserState(jid);
             const now = Date.now();
 
@@ -169,13 +159,6 @@ class AdvancedAntiBan {
 
             // Show typing indicator
             await sock.sendPresenceUpdate('composing', jid);
-
-            // Connection may drop mid-typing; abort before the remaining
-            // delays and the 'paused' update hit a dead socket.
-            if (!botState.isSocketOpen(sock)) {
-                console.warn('[AntiBan] Presence simulation aborted mid-typing — socket closed.');
-                return;
-            }
 
             if (hasThinkingPause) {
                 // Short pause before starting to type (thinking)
@@ -196,9 +179,6 @@ class AdvancedAntiBan {
 
             // Stop typing indicator
             await sock.sendPresenceUpdate('paused', jid);
-
-            // Only a REAL behavioral failure counts toward the circuit
-            // breaker; disconnects are handled by the connection engine.
 
             // Update response time tracking
             const responseTime = Date.now() - now;
