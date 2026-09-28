@@ -24,8 +24,8 @@ This repository is safe to clone and run, but **never commit any of the followin
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/edunoluwadarasimidavid/EDBOTS-APP.git
-cd EDBOTS-APP
+git clone https://github.com/edunoluwadarasimidavid/EDBOTS.git
+cd EDBOTS
 ```
 
 ### 2. Install dependencies
