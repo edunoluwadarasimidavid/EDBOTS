@@ -22,9 +22,11 @@ const http = require('http');
 const PLATFORM_ENV_VARS = [
     'EDBOTS_PUBLIC_URL',        // explicit override without touching .env
     'RENDER_EXTERNAL_URL',      // Render
-    'RAILWAY_PUBLIC_DOMAIN',    // Railway
+    'RAILWAY_PUBLIC_DOMAIN',    // Railway (custom domain / proxy front)
+    'RAILWAY_STATIC_URL',       // Railway (static/service URL)
     'FLY_APP_HOSTNAME',         // Fly.io (fly-global-services is IPv6-only)
-    'HEROKU_APP_NAME',          // Heroku (dyno metadata must be enabled)
+    'FLY_APP_NAME',             // Fly.io bare app name -> <name>.fly.dev
+    'HEROKU_APP_NAME',          // Heroku bare app name -> <name>.herokuapp.com
     'KOYEB_PUBLIC_DOMAIN',      // Koyeb
     'CODESPACE_NAME',           // GitHub Codespaces (needs -3000 preview host)
     'GITPOD_WORKSPACE_URL',     // Gitpod
@@ -61,6 +63,16 @@ function gitpodUrl(workspaceUrl, port) {
         return null;
     }
 }
+
+/**
+ * Platform vars that hold a BARE app name (not a full domain). These must be
+ * suffixed with the provider's default public domain, otherwise a name like
+ * "my-bot" would normalize to the bogus URL "https://my-bot".
+ */
+const BARE_NAME_SUFFIX = {
+    HEROKU_APP_NAME: '.herokuapp.com',
+    FLY_APP_NAME: '.fly.dev'
+};
 
 /**
  * Collect non-internal IPv4 addresses of this machine.
@@ -169,6 +181,17 @@ function detectPublicUrl(configUrl, port = parseInt(process.env.PORT || '3000', 
             if (url) return { url, source: 'platform', platformVar: envVar, lanIps: lanAddresses() };
             continue;
         }
+        // Bare app names get the provider's default public domain appended —
+        // a reverse proxy serves them on 443, so NO internal port is added.
+        if (BARE_NAME_SUFFIX[envVar]) {
+            const name = String(raw).trim().toLowerCase();
+            if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) continue; // not a valid app name
+            const normalized = normalizeOrigin(`https://${name}${BARE_NAME_SUFFIX[envVar]}`);
+            if (normalized) {
+                return { url: normalized, source: 'platform', platformVar: envVar, lanIps: lanAddresses() };
+            }
+            continue;
+        }
         const normalized = normalizeOrigin(raw);
         if (normalized) {
             return { url: normalized, source: 'platform', platformVar: envVar, lanIps: lanAddresses() };
@@ -180,4 +203,4 @@ function detectPublicUrl(configUrl, port = parseInt(process.env.PORT || '3000', 
     return { url: null, source: null, platformVar: null, lanIps: lanAddresses() };
 }
 
-module.exports = { detectPublicUrl, normalizeOrigin, lanAddresses, isPrivateIp, fetchPublicIp, PLATFORM_ENV_VARS };
+module.exports = { detectPublicUrl, normalizeOrigin, lanAddresses, isPrivateIp, fetchPublicIp, PLATFORM_ENV_VARS, BARE_NAME_SUFFIX };

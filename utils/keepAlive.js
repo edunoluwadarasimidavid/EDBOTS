@@ -1,42 +1,64 @@
 /**
  * @file keepAlive.js
- * @description Owner-controlled self-ping that keeps free-tier hosting
- * platforms (Render, Railway, Glitch, Replit, Koyeb…) from putting the
- * service to sleep. Every 10 minutes it makes a real HTTP request to this
- * process's own REST API `/api/health` endpoint — genuine inbound traffic
- * on the platform's port, no external service or dependency required.
+ * @description Owner-controlled keep-alive for free hosting tiers.
  *
- * The ON/OFF choice persists in data/keepAlive.json (gitignored) and is
- * restored automatically every time the bot (re)connects to WhatsApp.
+ * WHAT IT DOES
+ * Every KEEPALIVE_INTERVAL (default 10 min) it sends ONE real GET request to
+ * this server's own public health endpoint (platform URL when detectable,
+ * loopback as an honest fallback). Real inbound HTTP keeps platforms like
+ * Render/Railway/Koyeb from sleeping the service.
  *
- * URL resolution order:
- *   1. KEEP_ALIVE_URL env (explicit owner override)
- *   2. Platform public URL (same detection the web pairing UI uses:
- *      config.js webPairing.publicUrl, RENDER_EXTERNAL_URL, RAILWAY_…)
- *   3. Loopback 127.0.0.1:PORT — the bot and the REST API share one
- *      process, so loopback traffic still counts as real requests.
+ * HONESTY RULES
+ * - Local bind info (0.0.0.0 / PORT / 127.0.0.1) is NEVER presented as public.
+ * - Platform URLs (from RENDER_EXTERNAL_URL, RAILWAY_PUBLIC_DOMAIN, …) are
+ *   used WITHOUT the internal port — reverse proxies serve them on 443.
+ * - A public IP is an UNVERIFIED candidate only (egress IP ≠ open port); it
+ *   is used only after a one-shot verification, otherwise we say so plainly.
+ * - KEEPALIVE_URL (owner override) always wins over automatic detection.
+ *
+ * SAFETY
+ * - Single scheduler (start() is idempotent), timer unref'd (PM2-safe),
+ *   clean clearInterval on stop, persisted enabled state, no dependencies.
  */
 
-const http = require('http');
-const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { detectPublicEndpoint, verifyEndpoint, HEALTH_PATH, localInfo } = require('./publicEndpoint');
 
 const STATE_FILE = path.join(__dirname, '..', 'data', 'keepAlive.json');
-const INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
-const PING_TIMEOUT_MS = 15000;
+
+/** Interval bounds: never hammer the server, never risk platform timeouts. */
+const MIN_INTERVAL_MS = 60 * 1000;        // 1 min
+const MAX_INTERVAL_MS = 30 * 60 * 1000;   // 30 min
+const DEFAULT_INTERVAL_MS = 10 * 60 * 1000; // 10 min
 
 class KeepAlive {
     constructor() {
-        this.enabled = false;
         this.timer = null;
-        this.target = null;      // resolved URL (logged once per start)
-        this.lastPing = null;    // ISO timestamp of last attempt
-        this.lastStatus = null;  // "HTTP 200" or an error message
+        this.enabled = false;
+        this.intervalMs = this.readIntervals();
+        this.target = null;          // URL actually being pinged
+        this.targetKind = null;      // 'public' | 'public-unverified' | 'loopback'
+        this.endpoint = null;        // last detectPublicEndpoint() result
         this.pingsSent = 0;
+        this.pingsOk = 0;
+        this.pingsFailed = 0;
+        this.consecutiveFailures = 0;
+        this.lastPingAt = null;
+        this.lastLatencyMs = null;
+        this.lastStatusCode = null;
+        this.lastError = null;
+        this.verification = null;    // one-shot verify result for the panel
     }
 
-    // ── Persistence ────────────────────────────────────────────────
+    // ── Configuration ──────────────────────────────────────────────
+    readIntervals() {
+        const raw = parseInt(process.env.KEEPALIVE_INTERVAL || process.env.KEEP_ALIVE_INTERVAL || '', 10);
+        if (!Number.isFinite(raw)) return DEFAULT_INTERVAL_MS;
+        return Math.min(Math.max(raw, MIN_INTERVAL_MS), MAX_INTERVAL_MS);
+    }
+
+    // ── Persistence (survives restarts / PM2 reloads) ──────────────
     load() {
         try {
             const raw = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
@@ -58,68 +80,114 @@ class KeepAlive {
         }
     }
 
-    // ── Target URL resolution ──────────────────────────────────────
-    resolveTarget() {
-        const port = parseInt(process.env.PORT || '3000', 10);
+    // ── Endpoint resolution ────────────────────────────────────────
+    /**
+     * Decide WHAT to ping. Returns the endpoint detection plus the final
+     * target decision. Never throws.
+     */
+    async resolveTarget() {
+        const endpoint = await detectPublicEndpoint().catch(() => null);
+        this.endpoint = endpoint || localInfo();
 
-        // 1. Explicit override
-        const explicit = (process.env.KEEP_ALIVE_URL || '').trim();
-        if (explicit) {
-            return explicit.replace(/\/+$/, '') + '/api/health';
+        // 1. Owner-provided URL ALWAYS wins (spec: explicit config first).
+        //    If the owner pointed at an internal address (localhost, docker
+        //    service name), we still honor it — but label it explicitly so
+        //    the panel never calls an internal URL "public".
+        if (endpoint && endpoint.source === 'explicit' && endpoint.publicUrl) {
+            this.target = endpoint.publicUrl + HEALTH_PATH;
+            this.targetKind = endpoint.explicitLocal ? 'explicit-local' : 'public';
+            return { endpoint, target: this.target, kind: this.targetKind };
         }
 
-        // 2. Platform public URL (shared detection with web pairing)
-        try {
-            const { detectPublicUrl } = require('../api/webpair/publicUrl');
-            const cfgUrl = (require('../config').webPairing || {}).publicUrl || null;
-            const detected = detectPublicUrl(cfgUrl, port);
-            if (detected.url) return `${detected.url}/api/health`;
-        } catch {
-            /* fall through to loopback */
+        // 2. Trusted platform/config URL (no port appended — reverse proxy)
+        if (endpoint && endpoint.publicUrl && !endpoint.unverifiedCandidate) {
+            this.target = endpoint.publicUrl + HEALTH_PATH;
+            this.targetKind = 'public';
+            return { endpoint, target: this.target, kind: this.targetKind };
         }
 
-        // 3. Loopback — same process hosts both bot and REST API
-        return `http://127.0.0.1:${port}/api/health`;
+        // 3. Public-IP candidate: verify ONCE before trusting it. If the
+        //    port really answers, promote it; otherwise fall back honestly.
+        if (endpoint && endpoint.publicUrl && endpoint.unverifiedCandidate) {
+            const check = await verifyEndpoint(endpoint.publicUrl + HEALTH_PATH, 6000);
+            this.verification = { url: endpoint.publicUrl + HEALTH_PATH, ...check };
+            if (check.reachable) {
+                this.target = endpoint.publicUrl + HEALTH_PATH;
+                this.targetKind = 'public';
+                this.endpoint.confidence = 'medium'; // promoted by verification
+                this.endpoint.externallyReachable = true;
+                return { endpoint: this.endpoint, target: this.target, kind: this.targetKind };
+            }
+            // Not reachable → do NOT pretend. Loopback keeps the process warm;
+            // the panel will tell the owner the public URL could not be used.
+        }
+
+        // 4. Honest fallback: internal self-request (keeps Node active; some
+        //    platforms still count it, but it is NOT a public ping).
+        this.target = localInfo().healthUrl;
+        this.targetKind = 'loopback';
+        return { endpoint: this.endpoint, target: this.target, kind: this.targetKind };
     }
 
     // ── Ping ───────────────────────────────────────────────────────
-    pingOnce() {
-        if (!this.enabled) return;
-        if (!this.target) this.target = this.resolveTarget();
+    /** One ping cycle. Awaiting it gives the caller the verification result. */
+    async pingNow() {
+        if (!this.target) await this.resolveTarget();
 
-        try {
-            const client = this.target.startsWith('https') ? https : http;
-            const req = client.get(this.target, { timeout: PING_TIMEOUT_MS }, (res) => {
-                res.resume(); // drain the body
-                this.lastPing = new Date().toISOString();
-                this.lastStatus = `HTTP ${res.statusCode}`;
-                this.pingsSent++;
-            });
-            req.on('timeout', () => req.destroy(new Error('ping timeout')));
-            req.on('error', (e) => {
-                this.lastPing = new Date().toISOString();
-                this.lastStatus = e.message;
-            });
-        } catch (e) {
-            this.lastPing = new Date().toISOString();
-            this.lastStatus = e.message;
+        const result = await verifyEndpoint(this.target, 8000);
+        this.pingsSent++;
+        this.lastPingAt = new Date().toISOString();
+        this.lastLatencyMs = result.latencyMs;
+        this.lastStatusCode = result.status;
+
+        if (result.reachable) {
+            this.pingsOk++;
+            this.consecutiveFailures = 0;
+            this.lastError = null;
+        } else {
+            this.pingsFailed++;
+            this.consecutiveFailures++;
+            this.lastError = result.reason || `HTTP ${result.status}`;
         }
+        return result;
     }
 
-    // ── Control ────────────────────────────────────────────────────
+    // ── Scheduler ──────────────────────────────────────────────────
+    /**
+     * Start (idempotent — never creates a second interval, PM2 restart-safe).
+     * Resolves after the FIRST ping completes so callers can report a real
+     * verification result instead of a promise.
+     */
     start(silent = false) {
-        if (this.timer) return; // already running
+        if (this.timer) return Promise.resolve(this.status()); // already running
         this.enabled = true;
         this.save();
-        this.target = this.resolveTarget();
-        this.pingOnce(); // immediate first ping
-        this.timer = setInterval(() => this.pingOnce(), INTERVAL_MS);
-        if (this.timer.unref) this.timer.unref(); // never hold the process open
-        if (!silent) {
-            console.log(`\x1b[32m[KEEP-ALIVE] ✅ Started — pinging ${this.target} every 10 minutes\x1b[0m`);
-        }
+
+        // Scheduler first, then resolve/ping asynchronously
+        this.timer = setInterval(() => {
+            this.pingNow().catch((e) =>
+                console.error('[KEEP-ALIVE] ping error:', e && e.message ? e.message : e)
+            );
+        }, this.intervalMs);
+        if (this.timer.unref) this.timer.unref(); // never hold the process open (PM2-safe)
+
+        return this.resolveTarget()
+            .then(({ target, kind }) => {
+                if (!silent) {
+                    console.log(
+                        `\x1b[32m[KEEP-ALIVE] ✅ Started — ${kind === 'loopback' ? 'internal' : 'public'} ping every ${Math.round(this.intervalMs / 60000)} min → ${target}\x1b[0m`
+                    );
+                }
+                return this.pingNow();
+            })
+            .then(() => this.status())
+            .catch((e) => {
+                console.error('[KEEP-ALIVE] startup error:', e && e.message ? e.message : e);
+                return this.status();
+            });
     }
 
+    /** Stop cleanly and persist the disabled state. */
     stop(silent = false) {
         this.enabled = false;
         this.save();
@@ -128,24 +196,35 @@ class KeepAlive {
             this.timer = null;
         }
         if (!silent) {
-            console.log('\x1b[33m[KEEP-ALIVE] 💤 Stopped — the host may sleep after inactivity\x1b[0m');
+            console.log('\x1b[33m[KEEP-ALIVE] 💤 Stopped — scheduler cleared\x1b[0m');
         }
     }
 
-    /** Restore the persisted preference. Called when the bot comes online. */
+    /** Restore the persisted preference (called on every WhatsApp connect). */
     restore() {
         this.load();
         if (this.enabled) this.start(true);
     }
 
+    // ── Reporting ──────────────────────────────────────────────────
     status() {
         return {
             enabled: this.enabled,
-            target: this.target || this.resolveTarget(),
-            intervalMinutes: Math.round(INTERVAL_MS / 60000),
-            lastPing: this.lastPing,
-            lastStatus: this.lastStatus,
-            pingsSent: this.pingsSent
+            running: !!this.timer,
+            intervalMinutes: Math.round(this.intervalMs / 60000),
+            target: this.target,
+            targetKind: this.targetKind,
+            healthPath: HEALTH_PATH,
+            endpoint: this.endpoint,
+            verification: this.verification,
+            lastPingAt: this.lastPingAt,
+            lastLatencyMs: this.lastLatencyMs,
+            lastStatusCode: this.lastStatusCode,
+            lastError: this.lastError,
+            consecutiveFailures: this.consecutiveFailures,
+            pingsSent: this.pingsSent,
+            pingsOk: this.pingsOk,
+            pingsFailed: this.pingsFailed
         };
     }
 }

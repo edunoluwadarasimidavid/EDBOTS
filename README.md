@@ -133,6 +133,41 @@ EDBOTS App ──HTTPS──> EDBOTS REST API (/api/*) ──> running bot
 
 ---
 
+## ⏰ Keep-Alive on Free Hosting (owner command)
+
+Free tiers (Render, Railway, Koyeb, Glitch…) sleep services after inactivity.
+EDBOTS ships an owner-only command that pings the bot's **own public health
+endpoint** (`/api/health`) on a schedule so the platform keeps it awake:
+
+```
+.keepalive on       # start pinging every 10 min (panel shows detection results)
+.keepalive status   # target, confidence, last ping, failures
+.keepalive off      # stop and persist the disabled state
+```
+
+The panel is honest about what it knows:
+
+- **Platform URLs** (Render/Railway/Fly/Heroku/… env vars) are used as-is —
+  never `https://domain:3000`; reverse proxies serve them on 443.
+- **Local bind info** (`0.0.0.0`, `PORT`, `127.0.0.1`) is never presented as a
+  public address. If nothing public is detectable, the panel says so.
+- A URL inferred from the **public IP** is only used after a one-shot
+  verification and is otherwise labelled **UNVERIFIED / LOW confidence**.
+- `Reachability: VERIFIED` is only shown after a real HTTP request succeeded.
+
+### Configuration (all optional)
+
+| Variable | Purpose |
+|---|---|
+| `KEEPALIVE_URL` | Pin the public URL to ping (wins over all detection) — use this for custom domains behind a proxy |
+| `KEEPALIVE_INTERVAL` | Ping interval in ms (default `600000` = 10 min, min 1 min, max 30 min) |
+| `KEEP_ALIVE_URL` / `KEEP_ALIVE_INTERVAL` | Alternate spellings, same effect |
+
+The enabled/disabled choice persists in `data/keepAlive.json` (gitignored) and
+survives restarts and PM2 reloads.
+
+---
+
 ## 📱 Web Pairing on Headless Servers
 
 On platforms without an interactive terminal (Render, Railway, Docker, VPS
