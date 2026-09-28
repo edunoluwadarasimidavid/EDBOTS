@@ -68,17 +68,48 @@ const getGroupMetadata = async (sock, groupId) => {
 };
 
 /**
- * Checks if sender is owner
+ * Convert any WhatsApp JID to a bare number: strips the device/agent suffix
+ * ("23491...:12@s.whatsapp.net" -> "23491..."), @lid/@s.whatsapp.net hosts
+ * and every non-digit. Correct for phone JIDs AND LID JIDs.
  */
-const isOwner = (sock, senderRaw, fromMe = false) => {
+const jidToNumber = (jid) => {
+    if (!jid) return '';
+    const bare = String(jid).split('@')[0].split(':')[0];
+    return bare.replace(/[^0-9]/g, '');
+};
+
+/**
+ * Collect every plausible JID a sender may be identified by.
+ * Modern WhatsApp increasingly uses LID JIDs ("...@lid") for regular
+ * accounts and linked-device self-messages, while Business accounts keep
+ * classic phone JIDs. The same human can appear with EITHER form, so
+ * security checks must consider all candidates, never just one.
+ */
+const senderJidCandidates = (msg) => {
+    const jids = new Set();
+    const push = (j) => { if (j) jids.add(String(j)); };
+    push(msg.key?.participant);
+    push(msg.participant);
+    // In private chats the sender IS the chat (phone and LID forms appear here)
+    if (msg.key?.remoteJid && !String(msg.key.remoteJid).endsWith('@g.us')) {
+        push(msg.key.remoteJid);
+    }
+    return Array.from(jids);
+};
+
+/**
+ * Checks if sender is owner — matching across ALL JID-form candidates.
+ */
+const isOwner = (sock, senderNumbers, fromMe = false) => {
     if (fromMe === true) return true;
-    if (!senderRaw) return false;
-    
-    const sender = normalizeNumber(senderRaw);
-    const owner = normalizeNumber(config.owner[0] || "");
-    const botNumber = normalizeNumber(sock.user.id.split(':')[0]);
-    
-    return (owner !== '' && sender === owner) || sender === botNumber;
+    const nums = Array.isArray(senderNumbers) ? senderNumbers : [senderNumbers].filter(Boolean);
+    if (!nums.length) return false;
+
+    const botNumber = jidToNumber(sock?.user?.id);
+    const ownerList = [...(config.owner || []), ...(config.ownerNumber || [])];
+    const ownerNumbers = ownerList.map(jidToNumber).filter(Boolean);
+
+    return nums.some((n) => (botNumber && n === botNumber) || ownerNumbers.includes(n));
 };
 
 /**
@@ -90,20 +121,27 @@ const isSystemJid = (jid) => {
 };
 
 /**
- * Checks if sender is admin
+ * Checks if sender is admin — compares bare numbers so LID and phone JID
+ * forms of the same participant both match the group participant list.
  */
-const isAdmin = async (sock, sender, groupId, metadata) => {
+const isAdmin = async (sock, senderNumbers, groupId, metadata) => {
     if (!metadata) return false;
-    return metadata.participants.some(p => p.id === sender && p.admin !== null);
+    const nums = new Set(Array.isArray(senderNumbers) ? senderNumbers : [senderNumbers].filter(Boolean));
+    if (!nums.size) return false;
+    return metadata.participants.some((p) => nums.has(jidToNumber(p.id)) && p.admin !== null);
 };
 
 /**
- * Checks if bot is admin
+ * Checks if bot is admin — compares bare numbers so LID vs phone JID forms
+ * of the bot's own identity both match the participant list.
  */
 const isBotAdmin = async (sock, groupId, metadata) => {
     if (!metadata) return false;
-    const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-    return metadata.participants.some(p => p.id === botJid && p.admin !== null);
+    const botNumbers = new Set([
+        jidToNumber(sock?.user?.id),
+        sock?.user?.lid ? jidToNumber(sock.user.lid) : null
+    ].filter(Boolean));
+    return metadata.participants.some(p => botNumbers.has(jidToNumber(p.id)) && p.admin !== null);
 };
 
 /**
@@ -120,14 +158,13 @@ const handleMessage = async (sock, msg, commands) => {
         const fromMe = msg.key.fromMe;
         const isGroup = from.endsWith('@g.us');
         
-        // STEP 2 — Safe sender extraction priority
-        const senderRaw = 
-            msg.key.participant || 
-            msg.participant || 
-            msg.key.remoteJid || 
-            "";
-        
-        const sender = normalizeNumber(senderRaw);
+        // STEP 2 — Sender resolution across ALL JID forms (phone + LID).
+        // Never rely on a single JID: friends on regular WhatsApp and the
+        // bot's own linked-device messages may arrive as LID JIDs.
+        const senderJids = senderJidCandidates(msg);
+        const senderNumbers = senderJids.map(jidToNumber).filter(Boolean);
+        const senderRaw = senderJids[0] || from;   // display/log value
+        const sender = senderNumbers[0] || jidToNumber(from);
         
         // 0. BANNED CHECK (CRITICAL)
         if (isBanned(senderRaw)) {
@@ -135,13 +172,14 @@ const handleMessage = async (sock, msg, commands) => {
             // To avoid spamming back to banned users, we check if it was a command
             const body = (content.conversation || content.extendedTextMessage?.text || '').trim();
             if (body.startsWith(config.prefix || '.')) {
-                // Return early without replying to prevent bot loops if banned person tries to spam
+                console.log(`[DROP] Banned sender sent command: ${senderRaw}`);
                 return; 
             }
+            console.log(`[DROP] Banned sender: ${senderRaw}`);
             return;
         }
 
-        const ownerStatus = isOwner(sock, senderRaw, fromMe);
+        const ownerStatus = isOwner(sock, senderNumbers, fromMe);
         const groupMetadata = isGroup ? await getGroupMetadata(sock, from) : null;
 
         // Enhanced Body Extraction
@@ -177,12 +215,15 @@ const handleMessage = async (sock, msg, commands) => {
         }
 
         // Anti-Ban: Determine if we should respond
-        const adminStatus = isGroup ? await isAdmin(sock, senderRaw, from, groupMetadata) : false;
+        const adminStatus = isGroup ? await isAdmin(sock, senderNumbers, from, groupMetadata) : false;
         const isPrivileged = ownerStatus ? 'owner' : adminStatus;
         if (!(await antiBan.shouldRespond(sock, from, isCmd, isPrivileged))) return;
 
         // selfMode check
-        if (config.selfMode && !ownerStatus && isCmd) return;
+        if (config.selfMode && !ownerStatus && isCmd) {
+            console.log(`[DROP] selfMode blocked command from ${senderRaw}: ${commandName || 'unknown'}`);
+            return;
+        }
 
         if (!fullBody && !isReply) return;
 

@@ -400,17 +400,20 @@ const connectToWhatsApp = async () => {
     });
 
     // 9. Message Handling
+    // WhatsApp delivers messages in BATCHES (messages.upsert carries a list).
+    // The old code processed only messages[0] and silently dropped every
+    // other message in the batch — a major cause of "bot ignores people".
+    // Process ALL messages, sequentially to preserve order.
     sock.ev.on('messages.upsert', async (chatUpdate) => {
-        try {
-            if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
-            const msg = chatUpdate.messages[0];
-            if (!msg.message) return;
-            if (msg.key.remoteJid === 'status@broadcast') return;
-
-            await handleMessage(sock, msg, commands); 
-
-        } catch (err) {
-            console.error('\x1b[31m[HANDLER ERROR]\x1b[0m', err);
+        if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
+        for (const msg of chatUpdate.messages) {
+            if (!msg.message) continue;
+            if (msg.key.remoteJid === 'status@broadcast') continue;
+            try {
+                await handleMessage(sock, msg, commands);
+            } catch (err) {
+                console.error('\x1b[31m[HANDLER ERROR]\x1b[0m', err);
+            }
         }
     });
 
