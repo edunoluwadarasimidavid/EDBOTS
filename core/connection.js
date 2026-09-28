@@ -385,6 +385,12 @@ const connectToWhatsApp = async () => {
             // pairing code still on screen and lets tokenStore consume the
             // pairing token (done in webpair/routes on state change).
             authEvents.setState('CONNECTED');
+
+            // Restore the owner's keep-alive preference (free-host sleep
+            // protection). Non-fatal: never block a successful connection.
+            try {
+                require('../utils/keepAlive').restore();
+            } catch { /* non-critical */ }
         }
     });
 

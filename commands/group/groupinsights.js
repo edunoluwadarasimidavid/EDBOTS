@@ -18,7 +18,7 @@ function loadStats() {
 
 module.exports = {
     name: 'insights',
-    aliases: ['analytics', 'stats', 'groupstats'],
+    aliases: ['insights', 'groupanalytics'],
     category: 'admin',
     description: 'View group analytics and insights',
     usage: '.insights [period]',

@@ -9,31 +9,37 @@ const path = require('path');
 
 const MODES_FILE = path.join(__dirname, '../data/botModes.json');
 
+// Every category that exists in commands/. Used by permissive modes.
+const ALL_CATEGORIES = [
+    'ai', 'fun', 'media', 'utility', 'general', 'menu', 'system',
+    'anime', 'premium', 'textmaker', 'business', 'group', 'admin', 'owner'
+];
+
 // Available modes
 const MODES = {
     personal: {
         name: 'Personal',
         emoji: '👤',
         description: 'Full-featured personal assistant with all commands',
-        features: ['ai', 'fun', 'media', 'utility', 'general', 'owner']
+        features: [...ALL_CATEGORIES]
     },
     business: {
         name: 'Business',
         emoji: '💼',
         description: 'Professional mode with business tools, auto-replies, and analytics',
-        features: ['ai', 'business', 'utility', 'general']
+        features: ['ai', 'business', 'utility', 'general', 'menu', 'system']
     },
     group: {
         name: 'Group',
         emoji: '👥',
         description: 'Group-focused mode with moderation and management tools',
-        features: ['ai', 'group', 'admin', 'utility', 'general']
+        features: ['ai', 'group', 'admin', 'utility', 'general', 'menu', 'system']
     },
     owner: {
         name: 'Owner',
         emoji: '👑',
         description: 'Full admin access with restricted commands',
-        features: ['ai', 'fun', 'media', 'utility', 'general', 'admin', 'owner']
+        features: [...ALL_CATEGORIES]
     }
 };
 
@@ -94,9 +100,12 @@ class ModeManager {
     }
 
     /**
-     * Check if a command category is allowed in the current mode
+     * Check if a command category is allowed in the current mode.
+     * Navigation (menu) and diagnostics (system) are always available so
+     * users can always see the menu and check the bot's health.
      */
     isAllowed(mode, category) {
+        if (category === 'menu' || category === 'system') return true;
         const modeInfo = MODES[mode];
         if (!modeInfo) return true; // Default: allow all
         return modeInfo.features.includes(category);

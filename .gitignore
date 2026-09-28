@@ -59,6 +59,7 @@ data/commandHelp.json
 data/notifications.json
 data/ownerMenu.json
 data/triviaData.json
+data/keepAlive.json
 
 # Other
 edbot-premium-server/

@@ -222,7 +222,7 @@ const analyticsDashboard = new AnalyticsDashboard();
 
 module.exports = {
     name: 'analytics',
-    aliases: ['stats', 'dashboard', 'report'],
+    aliases: ['dashboard', 'report'],
     category: 'business',
     description: 'View business analytics dashboard',
     usage: '.analytics [today/week/contacts/export]',
