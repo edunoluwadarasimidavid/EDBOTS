@@ -22,6 +22,14 @@ const { Router } = require('./core/router');
 const { handleCors, sendJson, readJsonBody, checkRateLimit } = require('./core/http');
 const { notFound, methodNotAllowed } = require('./core/errors');
 
+// Versioned, hardened v1 namespace (Appwrite-JWT or API-key auth, strict
+// envelope, gap endpoints). Handles /api/v1/* before legacy dispatch.
+const { handleV1 } = require('./v1/routes');
+
+// LevelPlay S2S ad-reward callback (public; secret-URL model). Intercepted
+// before v1 routing because it is the one unauthenticated /api/v1 path.
+const { handleAdCallback } = require('./v1/adGate');
+
 // Web pairing surface (top-level /pair routes, handled BEFORE CORS so the
 // browser's own origin is irrelevant and SSE responses aren't touched).
 const webPair = require('./webpair/routes');
@@ -45,9 +53,8 @@ async function handleRequest(req, res) {
   // Web pairing first — it has its own security model (pairing token), and
   // must not inherit API CORS/rate-limiting semantics. Returns false for
   // non-pairing paths so /api is unaffected.
-  if (webPair.handle(req, res)) return;
-  // CORS (also short-circuits OPTIONS preflight)
-  if (handleCors(req, res, config.corsOrigins)) return;
+  if (webPair.handle(req, res)) return;    // CORS (also short-circuits OPTIONS preflight)
+    if (handleCors(req, res, config.corsOrigins)) return;
 
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -62,6 +69,7 @@ async function handleRequest(req, res) {
         endpoints: [
           'GET /api/health',
           'GET /pair (web pairing UI)',
+          'GET /api/v1/health',
           'GET /api/status',
           'POST /api/bot/start',
           'POST /api/bot/stop',
@@ -92,6 +100,13 @@ async function handleRequest(req, res) {
     if (!pathname.startsWith(`${config.basePath}/`)) {
       throw notFound('Unknown resource. API is mounted at /api');
     }
+
+    // ── Versioned namespace /api/v1/* ─────────────────────────────────
+    // Public LevelPlay reward callback (secret-URL gated) — intercepted
+    // before v1 auth dispatch; returns false for every other path.
+    if (handleAdCallback(req, res, pathname)) return;
+
+    if (await handleV1(router, req, res, pathname)) return;
 
     const routePath = pathname.slice(config.basePath.length) || '/';
     const match = router.match(req.method, routePath);

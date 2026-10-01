@@ -14,7 +14,8 @@
     "api": "node api/server.js",
     "api:key": "node api/createKey.js",
     "postinstall": "node utils/selfRepair.js",
-    "test": "node tests/api-smoke.test.js"
+    "test": "node tests/api-smoke.test.js",
+    "test:v1": "node tests/api-v1-smoke.test.js"
   },
   "keywords": [
     "EDBOTS",

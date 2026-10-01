@@ -179,6 +179,33 @@ const handleMessage = async (sock, msg, commands) => {
             return;
         }
 
+        // Part C — daily message quota for the active API operator.
+        // The v1 auth layer registers the operator identity
+        // (api/v1/messageQuota.js); with no operator registered (pure
+        // self-hosted, app never connected) the quota is INACTIVE. Denied
+        // messages never consume quota; the one-time daily notice is
+        // best-effort and does not count as usage.
+        try {
+            const quota = require('../api/v1/messageQuota');
+            const verdict = quota.admitMessage({ fromMe });
+            if (!verdict.allowed) {
+                console.log(`[QUOTA] Daily message limit reached (${verdict.used}/${verdict.ceiling})` +
+                    `${verdict.userId ? ` for operator ${verdict.userId}` : ''} — message dropped`);
+                if (verdict.shouldNotify && !isGroup && sock && sock.sendMessage) {
+                    try {
+                        await sock.sendMessage(from, {
+                            text: '⚠️ *Daily message limit reached.* Watch a rewarded ad in the app ' +
+                                  'to raise the limit, or upgrade to premium for unlimited messages.'
+                        });
+                    } catch { /* best-effort notice */ }
+                }
+                return;
+            }
+        } catch (quotaErr) {
+            // The quota is an availability guard, never a message-path dependency.
+            console.error('[QUOTA] check failed (allowing message):', quotaErr && quotaErr.message);
+        }
+
         const ownerStatus = isOwner(sock, senderNumbers, fromMe);
         const groupMetadata = isGroup ? await getGroupMetadata(sock, from) : null;
 

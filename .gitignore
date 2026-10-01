@@ -78,3 +78,6 @@ coverage/
 .gemini/
 gha-creds-*.json
 .hashes.json
+
+# Nested workspace clones (separate repos, never part of this repo)
+EDBOTS-APP/
